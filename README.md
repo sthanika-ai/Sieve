@@ -8,7 +8,7 @@ directly, and never generates text. Each model is a LoRA adapter and a small poi
 |---|---|---|--:|
 | Sieve-9B | [Qwen3.5-9B](https://huggingface.co/Qwen/Qwen3.5-9B) | [`sthanika-ai/Sieve-9B`](https://huggingface.co/sthanika-ai/Sieve-9B) | 41.71 ¹ |
 
-More models will be added under [sthanika-ai](https://huggingface.co/sthanika-ai). All of them run on this code, which
+More models will be added to the [Sieve collection](https://huggingface.co/collections/sthanika-ai/sieve-6abb93a61dd495f69811c586) on Hugging Face. All of them run on this code, which
 reads each model's backbone from its `adapter_config.json`.
 
 ¹ Self-reported, not yet on the leaderboard (see [Decision Index](#decision-index)).
