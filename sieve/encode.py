@@ -26,12 +26,14 @@ def special_ids(tok):
     return [tok.convert_tokens_to_ids(t) for t in SPECIAL]
 
 
-def encode(tok, state, questions, max_state=8192, max_branch=8192):
+def encode(tok, state, questions, max_state=8192, max_branch=8192, truncate_state=False):
     """questions: [{"instr": str, "options": [str, ...]}]. Returns token ids, positions and readout indices."""
     st_id, q_id, o_id, c_id, d_id = special_ids(tok)
     st = user_tokens(tok, state)
     if len(st) + 1 > max_state:
-        raise TooLong(f"state is {len(st) + 1} tokens (max {max_state})")
+        if not truncate_state:
+            raise TooLong(f"state is {len(st) + 1} tokens (max {max_state})")
+        st = st[:max_state - 1]
     S = [st_id] + st
     ids, pos = list(S), list(range(len(S)))
     decide_idx, opt_idx = [], []

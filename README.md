@@ -96,6 +96,27 @@ HTTP are excluded.
 |---|--:|--:|--:|--:|--:|--:|--:|
 | ms | 18.6 | 19.3 | 22.8 | 42.8 | 74.5 | 128.4 | 330.5 |
 
+## Evaluate
+
+```bash
+sieve-eval --model sthanika-ai/Sieve-9B --data benchmark.jsonl --out result.json
+```
+
+- **Input format.** Each line of `benchmark.jsonl` is a request (`state`, `questions`) plus a gold `label` for every
+  question: a choice key, `true`/`false`, or a score level index. The files in `data/` use this format.
+- **Metrics.**
+  - accuracy, with a 95% bootstrap interval, and the error rate;
+  - NLL, Brier and ECE (15 bins);
+  - the share of questions answered wrongly with p ≥ 0.9.
+
+  These are reported at the stored temperature and raw, with accuracy broken down by question type and by each
+  question's `src`.
+- **Limits.** Questions over the token limits are skipped and counted, not truncated, unless you pass
+  `--truncate-state`.
+- **Predictions.** `--predictions preds.jsonl` also writes every question's probabilities.
+- **Reproducing our numbers.** With `--no-merge`, `sieve-eval` reproduces Sieve-9B's public-test numbers in the
+  model card exactly. We checked SciQ, Banking77 and typed-decisions: every answer and every metric is identical.
+
 ## Decision Index
 
 Sieve-9B scores **41.71** on our own run of the [Decision Index](https://huggingface.co/spaces/multimodalart/jev-decision-index)

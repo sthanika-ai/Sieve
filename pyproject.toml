@@ -15,6 +15,7 @@ dependencies = [
   "transformers>=5.17",
   "peft>=0.21",
   "huggingface_hub",
+  "numpy",
 ]
 
 [project.optional-dependencies]
@@ -24,6 +25,7 @@ test = ["pytest>=8"]
 
 [project.scripts]
 sieve-serve = "sieve.serve:main"
+sieve-eval = "sieve.evaluate:main"
 
 [tool.setuptools.packages.find]
 include = ["sieve*"]
