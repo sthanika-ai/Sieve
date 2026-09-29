@@ -130,8 +130,8 @@ Sieve-9B scores **41.71** on our own run of the [Decision Index](https://hugging
   255 options.
 
 ```bash
-python -m decision_index run --engine sieve.decision_index_engine:SieveEngine --option model=sthanika-ai/Sieve-9B --out runs/sieve-9b
-python -m decision_index score --results runs/sieve-9b/results.jsonl
+python -m decision_index run --engine sieve.decision_index_engine:SieveEngine --option model=sthanika-ai/Sieve-9B --out runs/Sieve-9B
+python -m decision_index score --results runs/Sieve-9B/results.jsonl
 ```
 
 ## Training data

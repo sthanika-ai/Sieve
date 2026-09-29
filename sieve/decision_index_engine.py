@@ -1,7 +1,7 @@
 """Sieve as an engine for the Decision Index kit (github.com/apolinario/decision-index).
 
     python -m decision_index run --engine sieve.decision_index_engine:SieveEngine \
-        --option model=sthanika-ai/Sieve-9B --out runs/sieve-9b
+        --option model=sthanika-ai/Sieve-9B --out runs/Sieve-9B
 
 The model runs as it is served: adapter merged into the bf16 backbone, fp32 pointer head, calibrated temperature
 from head.pt. A single question runs as one causal row (state + question). Several questions share one state
@@ -99,7 +99,7 @@ class SieveEngine(Engine):
                 keys = mi["keys"]
                 answers[mi["id"]] = {"type": "choice", "choice": keys[max(range(len(p)), key=p.__getitem__)],
                                      "probabilities": dict(zip(keys, p))}
-        return {"model": self.provenance["model"].lower(), "answers": answers}, None
+        return {"model": self.provenance["model"], "answers": answers}, None
 
     def _logits(self, text, qs, rec, one_at_a_time=False):
         m = self.m
