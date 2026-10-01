@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "Sieve"
+type: software
+authors:
+  - name: "Sthānika AI"
+url: "https://sthanika.ai"
+repository-code: "https://github.com/sthanika-ai/Sieve"
+license: Apache-2.0
+date-released: 2026-10-01
