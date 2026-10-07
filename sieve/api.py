@@ -1,4 +1,7 @@
-"""Request and response format for typed questions: choice, noul and score."""
+"""Request and response format for typed questions: choice, noul and score.
+
+The confidence formulas are modified from Kev (https://github.com/jaredpalmer/kev, Apache-2.0).
+"""
 import os
 
 MAX_OPTIONS = int(os.environ.get("SIEVE_MAX_OPTIONS", "255"))

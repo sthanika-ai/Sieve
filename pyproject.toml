@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Typed decisions with calibrated probabilities in a single forward pass."
 readme = "README.md"
 license = "Apache-2.0"
-license-files = ["LICENSE", "NOTICE"]
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 dependencies = [
   "torch>=2.8",

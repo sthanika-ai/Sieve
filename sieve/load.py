@@ -10,6 +10,7 @@ from .model import SieveModel
 
 BASE_REVISIONS = {
     "Qwen/Qwen3.5-9B": "c202236235762e1c871ad0ccb60c8ee5ba337b9a",
+    "Qwen/Qwen3.8-27B": "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0",
 }
 
 

@@ -5,6 +5,8 @@
 
 Every branch's positions continue from the end of the state. The pointer head reads the hidden state at each
 </opt> and at <decide>.
+
+The delimiters and escaping are modified from Kev (https://github.com/jaredpalmer/kev, Apache-2.0).
 """
 import re
 
