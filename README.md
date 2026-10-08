@@ -27,18 +27,18 @@ Many steps in a product are decisions, not writing. Examples are routing a ticke
 
 | model | backbone | GPU memory | Decision Index 0.3 ¹ | Decision Index 0.2.1 ¹ | weights and model card |
 |---|---|--:|--:|--:|---|
-| Sieve-27B | [Qwen3.8-27B](https://huggingface.co/Qwen/Qwen3.8-27B) | ~55 GB | [**57.06**](https://huggingface.co/datasets/sthanika-ai/Sieve-27B-decision-index-results) | 57.21 | [`sthanika-ai/Sieve-27B`](https://huggingface.co/sthanika-ai/Sieve-27B) |
+| Sieve-27B | [Qwen3.8-27B](https://huggingface.co/Qwen/Qwen3.8-27B) | ~55 GB | [**60.04**](https://huggingface.co/datasets/sthanika-ai/Sieve-27B-decision-index-results) | – | [`sthanika-ai/Sieve-27B`](https://huggingface.co/sthanika-ai/Sieve-27B) |
 | Sieve-9B-Plus | [Qwen3.5-9B](https://huggingface.co/Qwen/Qwen3.5-9B) | ~20 GB | [**53.35**](https://huggingface.co/datasets/sthanika-ai/Sieve-9B-Plus-decision-index-results) | – | [`sthanika-ai/Sieve-9B-Plus`](https://huggingface.co/sthanika-ai/Sieve-9B-Plus) |
 | Sieve-9B | [Qwen3.5-9B](https://huggingface.co/Qwen/Qwen3.5-9B) | ~20 GB | – | [41.71](https://huggingface.co/datasets/sthanika-ai/Sieve-9B-decision-index-results) | [`sthanika-ai/Sieve-9B`](https://huggingface.co/sthanika-ai/Sieve-9B) |
 
-¹ Our own runs of the public [Decision Index](https://huggingface.co/spaces/multimodalart/jev-decision-index) suite with the official [kit](https://github.com/apolinario/decision-index), self-reported and not yet on the leaderboard. Sieve-9B-Plus was run on 0.3 only, and Sieve-9B has not been run on 0.3 yet.
+¹ Our own runs of the public [Decision Index](https://huggingface.co/spaces/multimodalart/jev-decision-index) suite with the official [kit](https://github.com/apolinario/decision-index), self-reported and not yet on the leaderboard. Sieve-27B and Sieve-9B-Plus were run on 0.3 only, and Sieve-9B has not been run on 0.3 yet.
 
 Results, latency and training details are on each model's card. All models run on this code. It reads each model's backbone from the model's `adapter_config.json` and loads that backbone at a pinned revision. New models are added to the [Sieve collection](https://huggingface.co/collections/sthanika-ai/sieve-6abb93a61dd495f69811c586).
 
 ## Install
 
 ```bash
-pip install "sieve-decisions[cuda,serve] @ git+https://github.com/sthanika-ai/sieve"
+pip install "sieve-decisions[cuda,serve] @ git+https://github.com/sthanika-ai/Sieve"
 # or the exact tested environment:
 pip install -r requirements.txt && pip install -e .
 ```
@@ -131,7 +131,7 @@ pip install -e ".[test]" && pytest
   title  = {Sieve: Decision Models},
   author = {{Sthanika AI}},
   year   = {2026},
-  url    = {https://github.com/sthanika-ai/sieve}
+  url    = {https://github.com/sthanika-ai/Sieve}
 }
 ```
 
