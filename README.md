@@ -72,8 +72,8 @@ decide(m,
 
 - **Temperature.** The model's `head.pt` stores the temperature. It never changes an answer, and `temperature=1.0` gives the raw distribution.
 - **Temperature per category.** Sieve-9B-Plus also stores one temperature per question category. A category is the question's type, its number of options (2, 3-4, 5-9, 10-25, 26+) and the kind of state (empty, text or JSON), so it is known from the request alone. A question takes the temperature of its most specific category in the table (`choice:3-4:text`, then `choice:3-4`, then `choice`), else the global one. Models without the table, such as Sieve-27B and Sieve-9B, use the global temperature as before. Passing `temperature=` overrides them all.
-- **Token limits.** `decide`, the server and `sieve-eval` use the limits each model was trained with, read from its `training_config.json`: 16,384 tokens for the state and 16,384 for each question with its options for Sieve-27B and Sieve-9B-Plus, and 8,192 for models that do not record them, such as Sieve-9B. A longer request is refused, never truncated. `m.encode(..., max_state=...)` and `sieve-eval --max-state` override them.
-- **Example script.** [`examples/quickstart.py`](examples/quickstart.py) runs the request above.
+- **Token limits.** `decide`, the server and `sieve-eval` use the limits each model was trained with, read from its `training_config.json`: 16,384 tokens for the state and 16,384 for each question with its options for Sieve-27B and Sieve-9B-Plus, and 8,192 for models that do not record them, such as Sieve-9B. A longer request is refused, never truncated. `m.encode(..., max_state=...)` and `sieve-eval --max-state` override them. The Decision Index engine declares its own, larger limits (below); in our Decision Index runs of Sieve-27B and Sieve-9B-Plus, 241 requests had a question longer than 16,384 tokens and were answered in full.
+- **Example script.** [`examples/quickstart.py`](examples/quickstart.py) runs the request above on Sieve-9B, which needs about 20 GB of GPU memory.
 
 ## HTTP server
 
