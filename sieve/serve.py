@@ -60,6 +60,7 @@ class Server:
             rec = self.m.encode(state, qs)
         except ValueError as e:
             raise HTTPException(422, str(e))
+        t = req.temperature if req.temperature is not None else self.m.question_temperatures(meta, req.state)
         with self.lock:
             if self.m.device == "cuda":
                 torch.cuda.synchronize()
@@ -68,9 +69,9 @@ class Server:
             if self.graphed is not None:
                 if pre is None:
                     pre = self.m.prefill_from_record(rec)
-                logits = self.graphed.logits(rec, prefix=pre, temperature=req.temperature)
+                logits = self.graphed.logits(rec, prefix=pre, temperature=t)
             else:
-                logits = self.m.logits(rec, prefix=pre, temperature=req.temperature)
+                logits = self.m.logits(rec, prefix=pre, temperature=t)
             probs = [torch.softmax(z, -1).cpu() for z in logits]
             if self.m.device == "cuda":
                 torch.cuda.synchronize()
@@ -91,6 +92,7 @@ def models():
     s = app.state.server
     return {"model": s.model_id, "base": s.base, "device": str(s.m.device),
             "temperature": s.m.head.temperature,
+            "temperatures_by_category": (s.m.temperatures or {}).get("table"),
             "cuda_graphs": None if s.graphed is None else {"captured": len(s.graphed.graphs),
                                                            "max_graph_tokens": s.graphed.max_graph_tokens},
             "prefix_cache": {"size": s.size, "hits": s.hits, "misses": s.misses, "cached_states": len(s.cache)}}

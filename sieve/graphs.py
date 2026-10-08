@@ -88,6 +88,7 @@ class CudaGraphRunner:
         Ls = rec["n_state"]
         _, _, rows = rows_of(rec)
         Q, Lb = len(rows), max(len(r["ids"]) for r in rows)
+        tq = temperature if isinstance(temperature, (list, tuple)) else [temperature] * Q
         Qb, Lbb, Lsb = _bucket(Q, self.Q_BUCKETS), _bucket(Lb, self.LB_BUCKETS), _bucket(Ls, self.LS_BUCKETS)
         if Qb is None or Lbb is None or Lsb is None or Qb * Lbb > self.max_graph_tokens:
             return m.logits(rec, prefix=prefix, temperature=temperature)
@@ -121,5 +122,5 @@ class CudaGraphRunner:
         out = []
         for i, r in enumerate(rows):
             idx = torch.tensor(r["opts"], device=m.device)
-            out.append(m.head(h[i, r["decide"]], h[i, idx], temperature))
+            out.append(m.head(h[i, r["decide"]], h[i, idx], tq[i]))
         return out

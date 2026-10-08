@@ -4,10 +4,10 @@
         --option model=sthanika-ai/Sieve-9B --out runs/Sieve-9B
 
 The model runs as it is served: adapter merged into the bf16 backbone, fp32 pointer head, calibrated temperature
-from head.pt. A single question runs as one causal row (state + question). Several questions share one state
-prefill and are answered in batches that fit a memory budget. Nothing is truncated and no option is dropped;
-requests over the declared limits raise Unsupported. Running out of GPU memory raises an ordinary error, which
-the kit retries when a run is resumed.
+from head.pt (per question category when head.pt has a per-category table). A single question runs as one causal row
+(state + question). Several questions share one state prefill and are answered in batches that fit a memory budget.
+Nothing is truncated and no option is dropped; requests over the declared limits raise Unsupported. Running out of GPU
+memory raises an ordinary error, which the kit retries when a run is resumed.
 """
 import hashlib
 import os
@@ -45,6 +45,8 @@ class SieveEngine(Engine):
         self.attn_heads = cfg.num_attention_heads
         self.provenance = {"model": os.path.basename(model.rstrip("/")), "source": model, "base_model": self.m.base_model,
                            "temperature": self.T, "serving": "adapter merged into the bf16 backbone, fp32 pointer head, eager"}
+        if self.m.temperatures:
+            self.provenance["temperatures"] = self.m.temperatures
         if os.path.isdir(model):
             for f in ("adapter_model.safetensors", "head.pt"):
                 p = os.path.join(model, f)
@@ -91,8 +93,9 @@ class SieveEngine(Engine):
             if z is None:
                 raise RuntimeError(f"GPU out of memory at {len(rec['ids'])} tokens (retry on resume)")
         answers = {}
-        for zi, mi in zip(z, meta):
-            p = F.softmax(zi.float() / self.T, -1).cpu().tolist()
+        temps = self.m.question_temperatures(meta, state) or [self.T] * len(meta)
+        for zi, mi, t in zip(z, meta, temps):
+            p = F.softmax(zi.float() / t, -1).cpu().tolist()
             if mi["type"] == "noul":
                 answers[mi["id"]] = {"type": "noul", "noul": p[1]}
             else:

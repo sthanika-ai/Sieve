@@ -14,6 +14,7 @@ import numpy as np
 import torch
 
 from .api import question_keys, to_record
+from .calibration import categories
 from .encode import TooLong, encode, rows_of
 
 BINS = 15
@@ -36,7 +37,8 @@ def probs(z, t):
 
 
 def metrics(rows, t):
-    P = [probs(r["logits"], t) for r in rows]
+    """t: one temperature for every row, or None for each row's own r["t"] (per-category calibration)."""
+    P = [probs(r["logits"], r["t"] if t is None else t) for r in rows]
     y = [r["label"] for r in rows]
     conf = np.array([p.max() for p in P])
     corr = np.array([int(np.argmax(p) == l) for p, l in zip(P, y)])
@@ -86,6 +88,7 @@ def items(records, tok, max_state, max_branch, truncate_state):
             Ls = len(state_ids)
             out.append({"record": meta.get("id", i), "question": qid, "group": group, "src": q.get("src"),
                         "type": q["type"], "label": label, "k": len(row["opts"]),
+                        "cats": categories(q["type"], len(row["opts"]), r["state"]),
                         "ids": state_ids + row["ids"], "opts": [Ls + o for o in row["opts"]], "decide": Ls + row["decide"]})
     return out, dict(skipped)
 
@@ -110,19 +113,34 @@ def score(m, rows, batch_tokens=8192):
     return rows
 
 
-def summary(rows, t):
-    cal, raw = metrics(rows, t), metrics(rows, 1.0)
+def set_temperatures(rows, t, table=None):
+    """Each row's temperature: its finest category in the per-category table, else the global t."""
+    for r in rows:
+        r["t"] = next((table[c] for c in r.get("cats", ()) if c in table), t) if table else t
+    return rows
+
+
+def summary(rows, t, per_category=False):
+    """per_category: rows carry their own r["t"]; the global t is then reported beside it."""
+    cal, raw = metrics(rows, None if per_category else t), metrics(rows, 1.0)
     out = OrderedDict([("questions", len(rows)), ("accuracy", cal["accuracy"]), ("accuracy_ci95", accuracy_ci(rows)),
                        ("error_rate", 1 - cal["accuracy"]),
                        ("calibrated", {k: v for k, v in cal.items() if k != "accuracy"}),
                        ("raw", {k: v for k, v in raw.items() if k != "accuracy"})])
+    if per_category:
+        out["calibrated_global_temperature"] = {k: v for k, v in metrics(rows, t).items() if k != "accuracy"}
+        parts = defaultdict(list)
+        for r in rows:
+            parts[r["cats"][0]].append(r)
+        out["by_category"] = OrderedDict((k, {"questions": len(v), "temperature": v[0]["t"], **metrics(v, None)})
+                                         for k, v in sorted(parts.items()))
     for key, name in (("type", "by_type"), ("src", "by_source")):
         parts = defaultdict(list)
         for r in rows:
             if r[key] is not None:
                 parts[r[key]].append(r)
         if parts:
-            out[name] = OrderedDict((k, {"questions": len(v), "accuracy": metrics(v, t)["accuracy"]})
+            out[name] = OrderedDict((k, {"questions": len(v), "accuracy": metrics(v, None if per_category else t)["accuracy"]})
                                     for k, v in sorted(parts.items()))
     return out
 
@@ -160,17 +178,24 @@ def main():
     if not rows:
         raise SystemExit("no scoreable questions in the data file")
     score(m, rows, a.batch_tokens)
+    table = (m.temperatures or {}).get("table")
+    set_temperatures(rows, t, table)
     result = OrderedDict([("model", a.model), ("data", a.data), ("records", len(records)), ("skipped", skipped),
                           ("temperature", t), ("merged", not a.no_merge),
                           ("max_state", a.max_state), ("truncate_state", a.truncate_state)])
-    result.update(summary(rows, t))
+    if table:
+        result["temperatures"] = m.temperatures
+    result.update(summary(rows, t, per_category=bool(table)))
     with open(a.out, "w") as f:
         json.dump(rounded(result), f, indent=1, ensure_ascii=False)
     if a.predictions:
         with open(a.predictions, "w") as f:
             for r in rows:
-                f.write(json.dumps({"record": r["record"], "question": r["question"], "label": r["label"],
-                                    "probabilities": [round(float(x), 6) for x in probs(r["logits"], t)]}) + "\n")
+                line = {"record": r["record"], "question": r["question"], "label": r["label"],
+                        "probabilities": [round(float(x), 6) for x in probs(r["logits"], r["t"])]}
+                if table:                                   # per-category calibration: the temperature this question used
+                    line["temperature"] = round(float(r["t"]), 6)
+                f.write(json.dumps(line) + "\n")
     print(json.dumps({k: result[k] for k in ("questions", "accuracy", "accuracy_ci95")}), "->", a.out)
 
 

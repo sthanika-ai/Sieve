@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 from transformers import AutoModelForCausalLM, AutoTokenizer, DynamicCache
 
+from .calibration import question_temperatures
 from .encode import encode, rows_of
 
 
@@ -46,6 +47,12 @@ class SieveModel(nn.Module):
         self.head = PointerHead(self.d, dp).to(device=device, dtype=head_dtype).eval()
         self.device, self.dtype, self.head_dtype = device, dtype, head_dtype
         self.pad_id = self.tok.pad_token_id or 0
+        self.temperatures = None        # per-category temperatures from head.pt (None: the one global temperature)
+
+    def question_temperatures(self, meta, state=None):
+        """One calibration temperature per question (meta from api.to_record): its category's temperature from
+        head.pt, or the global one. None when head.pt has no per-category table (every question uses the global T)."""
+        return question_temperatures(self.temperatures, meta, self.head.temperature, state)
 
     def encode(self, state, questions, **kw):
         return encode(self.tok, state, questions, **kw)
@@ -54,6 +61,7 @@ class SieveModel(nn.Module):
         d = torch.load(os.path.join(path, "head.pt"), map_location=self.device, weights_only=False)
         self.head.load_state_dict(d["head"])
         self.head.temperature = d.get("temperature", 1.0)
+        self.temperatures = d.get("temperatures")      # per question category (Sieve-9B-Plus); None: the global T
         return self
 
     def _new_cache(self):
@@ -92,16 +100,19 @@ class SieveModel(nn.Module):
 
     @torch.no_grad()
     def logits(self, rec, prefix=None, temperature=None):
-        """One logit vector per question. Questions continue from the (cached) state as a batch of causal rows."""
+        """One logit vector per question. Questions continue from the (cached) state as a batch of causal rows.
+
+        temperature: None (the stored global one), a number, or a list with one per question."""
         Ls = rec["n_state"]
         _, _, rows = rows_of(rec)
+        tq = temperature if isinstance(temperature, (list, tuple)) else [temperature] * len(rows)
         if (self.RECOMPUTE_MIN_BRANCH and len(rows) == 1 and len(rows[0]["ids"]) >= self.RECOMPUTE_MIN_BRANCH
                 and Ls <= len(rows[0]["ids"])):
             r = rows[0]
             ids = torch.tensor([rec["ids"][:Ls] + r["ids"]], device=self.device)
             h = self.lm(input_ids=ids).last_hidden_state[0].to(self.head_dtype)
             idx = torch.tensor([Ls + o for o in r["opts"]], device=self.device)
-            return [self.head(h[Ls + r["decide"]], h[idx], temperature)]
+            return [self.head(h[Ls + r["decide"]], h[idx], tq[0])]
         if prefix is None:
             prefix = self.prefill_from_record(rec)
         if prefix["n"] != Ls:
@@ -123,7 +134,7 @@ class SieveModel(nn.Module):
         out = []
         for i, r in enumerate(rows):
             idx = torch.tensor(r["opts"], device=self.device)
-            out.append(self.head(h[i, r["decide"]], h[i, idx], temperature))
+            out.append(self.head(h[i, r["decide"]], h[i, idx], tq[i]))
         return out
 
     @torch.no_grad()

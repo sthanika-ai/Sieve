@@ -35,7 +35,8 @@ def load_sieve(path_or_repo, base=None, base_revision=None, device="cuda", dtype
     base and base_revision default to the backbone named in the model's adapter_config.json.
 
     merge=True folds the adapter into the backbone for speed; merge=False keeps the exact unmerged forward.
-    temperature overrides the calibrated temperature stored in head.pt (1.0 gives raw logits).
+    temperature overrides the calibrated temperatures stored in head.pt, the global one and any per-category ones,
+    for every question (1.0 gives raw logits).
     """
     from peft import PeftModel
     path = _resolve(path_or_repo)
@@ -52,6 +53,7 @@ def load_sieve(path_or_repo, base=None, base_revision=None, device="cuda", dtype
     m.load_head(path)
     if temperature is not None:
         m.head.temperature = float(temperature)
+        m.temperatures = None
     if merge:
         m.lm = m.lm.merge_and_unload()
     m.lm.eval()
@@ -69,5 +71,7 @@ def decide(m, state, questions, temperature=None, prefix=None):
         raise ValueError("temperature must be > 0 (1.0 = raw logits; None = the calibrated default)")
     text, qs, meta = to_record(state, questions)
     rec = m.encode(text, qs)
+    if temperature is None:                         # the calibrated default: per category when head.pt has a table
+        temperature = m.question_temperatures(meta, state)
     probs = [F.softmax(z, -1).float().cpu() for z in m.logits(rec, prefix=prefix, temperature=temperature)]
     return to_answers(probs, meta)
