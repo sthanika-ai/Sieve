@@ -54,3 +54,12 @@ def test_over_long_requests_are_refused():
         encode(TOK, "x" * 100, [{"instr": "q", "options": ["a"]}], max_state=50)
     with pytest.raises(TooLong):
         encode(TOK, "x", [{"instr": "q", "options": ["a" * 100]}], max_branch=50)
+
+
+def test_model_encode_uses_the_model_limits():
+    from sieve.model import SieveModel
+    m = object.__new__(SieveModel)                                          # no backbone needed for encoding
+    m.tok, m.max_state, m.max_branch = TOK, 50, 8192
+    with pytest.raises(TooLong):
+        m.encode("x" * 100, [{"instr": "q", "options": ["a"]}])
+    m.encode("x" * 100, [{"instr": "q", "options": ["a"]}], max_state=200)   # an explicit limit still wins

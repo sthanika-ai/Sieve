@@ -14,11 +14,27 @@ BASE_REVISIONS = {
 }
 
 
+DEFAULT_LIMITS = (8192, 8192)
+
+
 def _resolve(path_or_repo):
     if os.path.isdir(path_or_repo):
         return path_or_repo
     from huggingface_hub import snapshot_download
-    return snapshot_download(path_or_repo, allow_patterns=["adapter_config.json", "adapter_model.safetensors", "head.pt"])
+    return snapshot_download(path_or_repo, allow_patterns=["adapter_config.json", "adapter_model.safetensors", "head.pt",
+                                                           "training_config.json"])
+
+
+def limits_of(path):
+    """The token limits a Sieve model was trained with, from its training_config.json: (state, question with its
+    options and delimiters). Models that do not record them get DEFAULT_LIMITS."""
+    try:
+        with open(os.path.join(path, "training_config.json")) as f:
+            recipe = json.load(f).get("recipe") or {}
+    except (OSError, ValueError):
+        return DEFAULT_LIMITS
+    return (int(recipe.get("max_state_tokens") or DEFAULT_LIMITS[0]),
+            int(recipe.get("max_question_and_options_tokens") or DEFAULT_LIMITS[1]))
 
 
 def base_of(path):
@@ -33,6 +49,8 @@ def load_sieve(path_or_repo, base=None, base_revision=None, device="cuda", dtype
     """Load the adapter and head from a local folder or a Hugging Face repo onto the model's pinned backbone.
 
     base and base_revision default to the backbone named in the model's adapter_config.json.
+
+    The model's trained token limits (limits_of) become its encode defaults, used by decide and the server.
 
     merge=True folds the adapter into the backbone for speed; merge=False keeps the exact unmerged forward.
     temperature overrides the calibrated temperatures stored in head.pt, the global one and any per-category ones,
@@ -51,6 +69,7 @@ def load_sieve(path_or_repo, base=None, base_revision=None, device="cuda", dtype
     m.base_model = base
     m.lm = PeftModel.from_pretrained(m.lm, path, is_trainable=False)
     m.load_head(path)
+    m.max_state, m.max_branch = limits_of(path)
     if temperature is not None:
         m.head.temperature = float(temperature)
         m.temperatures = None

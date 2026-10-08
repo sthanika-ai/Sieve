@@ -163,8 +163,9 @@ def main():
     ap.add_argument("--predictions", help="also write one JSON line per question with its probabilities")
     ap.add_argument("--base", default=None, help="backbone (default: the one in the model's adapter_config.json)")
     ap.add_argument("--no-merge", action="store_true", help="keep the adapter unmerged (exact, but slower)")
-    ap.add_argument("--max-state", type=int, default=8192)
-    ap.add_argument("--max-question", type=int, default=8192, help="question, options and delimiters")
+    ap.add_argument("--max-state", type=int, default=None, help="state token limit (default: the model's trained limit)")
+    ap.add_argument("--max-question", type=int, default=None,
+                    help="question, options and delimiters (default: the model's trained limit)")
     ap.add_argument("--truncate-state", action="store_true", help="cut states over --max-state instead of skipping them")
     ap.add_argument("--batch-tokens", type=int, default=8192)
     a = ap.parse_args()
@@ -174,7 +175,8 @@ def main():
     t = float(m.head.temperature)
     with open(a.data) as f:
         records = [json.loads(line) for line in f if line.strip()]
-    rows, skipped = items(records, m.tok, a.max_state, a.max_question, a.truncate_state)
+    max_state, max_question = a.max_state or m.max_state, a.max_question or m.max_branch
+    rows, skipped = items(records, m.tok, max_state, max_question, a.truncate_state)
     if not rows:
         raise SystemExit("no scoreable questions in the data file")
     score(m, rows, a.batch_tokens)
@@ -182,7 +184,7 @@ def main():
     set_temperatures(rows, t, table)
     result = OrderedDict([("model", a.model), ("data", a.data), ("records", len(records)), ("skipped", skipped),
                           ("temperature", t), ("merged", not a.no_merge),
-                          ("max_state", a.max_state), ("truncate_state", a.truncate_state)])
+                          ("max_state", max_state), ("max_question", max_question), ("truncate_state", a.truncate_state)])
     if table:
         result["temperatures"] = m.temperatures
     result.update(summary(rows, t, per_category=bool(table)))

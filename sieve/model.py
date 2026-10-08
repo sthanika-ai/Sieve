@@ -48,6 +48,7 @@ class SieveModel(nn.Module):
         self.device, self.dtype, self.head_dtype = device, dtype, head_dtype
         self.pad_id = self.tok.pad_token_id or 0
         self.temperatures = None        # per-category temperatures from head.pt (None: the one global temperature)
+        self.max_state = self.max_branch = 8192    # token limits; load_sieve sets the ones the model was trained with
 
     def question_temperatures(self, meta, state=None):
         """One calibration temperature per question (meta from api.to_record): its category's temperature from
@@ -55,6 +56,8 @@ class SieveModel(nn.Module):
         return question_temperatures(self.temperatures, meta, self.head.temperature, state)
 
     def encode(self, state, questions, **kw):
+        kw.setdefault("max_state", self.max_state)
+        kw.setdefault("max_branch", self.max_branch)
         return encode(self.tok, state, questions, **kw)
 
     def load_head(self, path):
