@@ -78,3 +78,11 @@ def test_kit_stand_in_text():
     from sieve._kit import Unsupported, text
     assert text("abc") == "abc" and text({"a": [1, "é"]}) == '{"a":[1,"é"]}'
     assert issubclass(Unsupported, ValueError)
+
+
+def test_slots_engine_names_the_missing_package(monkeypatch):
+    import sys
+    monkeypatch.setitem(sys.modules, "decider", None)              # decider-ai not installed
+    monkeypatch.delitem(sys.modules, "sieve.slots.engine", raising=False)
+    with pytest.raises(ImportError, match="pip install --no-deps decider-ai==1.6.0"):
+        import sieve.slots.engine  # noqa: F401

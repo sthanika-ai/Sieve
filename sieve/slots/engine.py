@@ -17,11 +17,16 @@ Run:
 import json
 
 import torch
-import decider.infer as DI
-from decider import temperature as TT
-from decider.infer import Decider
-from decider.prompt import MAX_OPTIONS, chat_template
-from decider.systemone import assemble, unique_tokens
+
+try:
+    import decider.infer as DI
+    from decider import temperature as TT
+    from decider.infer import Decider
+    from decider.prompt import MAX_OPTIONS, chat_template
+    from decider.systemone import assemble, unique_tokens
+except ImportError as e:
+    raise ImportError("Sieve-31B builds its prompts with the decider-ai package; install it without its dependencies: "
+                      "pip install --no-deps decider-ai==1.6.0") from e
 
 try:
     from decision_index.engines.base import Engine, Unsupported
