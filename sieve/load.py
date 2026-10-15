@@ -2,7 +2,8 @@
 
 Sieve models come in four designs, told apart by their files:
 
-    pointer  head.pt                    Sieve-27B, Sieve-9B-v2, Sieve-9B    (sieve.model)
+    pointer  head.pt                    Sieve-27B, Sieve-9B-v2, Sieve-9B, Sieve-2B-v3
+                                                                            (sieve.model)
     fork     config.json (sieve-hybrid-fork) + head.safetensors
                                         Sieve-2B-v2, Sieve-2B, Sieve-0.8B   (sieve.fork)
     codes    sieve_config.json          Sieve-4B                            (sieve.codes)
@@ -21,6 +22,7 @@ from .api import to_answers, to_record
 from .model import SieveModel
 
 BASE_REVISIONS = {
+    "Qwen/Qwen3.5-2B": "15852e8c16360a2fea060d615a32b45270f8a8fc",
     "Qwen/Qwen3.5-9B": "c202236235762e1c871ad0ccb60c8ee5ba337b9a",
     "Qwen/Qwen3.8-27B": "1d4bf0f2ff6012fd82039f2fa52739d0dd7c60c0",
 }
@@ -142,7 +144,7 @@ def load_sieve(path_or_repo, base=None, base_revision=None, device="cuda", dtype
                temperature=None, **options):
     """Load any Sieve model from a local folder or a Hugging Face repo.
 
-    The arguments of a pointer-head model (Sieve-27B, Sieve-9B-v2, Sieve-9B) are those of load_pointer. temperature
+    The arguments of a pointer-head model (Sieve-27B, Sieve-9B-v2, Sieve-9B, Sieve-2B-v3) are those of load_pointer. temperature
     overrides any model's calibrated temperatures (1.0 gives raw probabilities). Other options go to the model's own
     loader: prefix_cache_gb for Sieve-4B; revision for the option-fork models; split, max_tokens and fwd_tokens for
     Sieve-31B, whose base and base_revision are its backbone.
