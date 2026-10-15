@@ -64,7 +64,7 @@ class SieveModel(nn.Module):
         d = torch.load(os.path.join(path, "head.pt"), map_location=self.device, weights_only=False)
         self.head.load_state_dict(d["head"])
         self.head.temperature = d.get("temperature", 1.0)
-        self.temperatures = d.get("temperatures")      # per question category (Sieve-9B-v2); None: the global T
+        self.temperatures = d.get("temperatures")      # per question category (Sieve-9B-v2, Sieve-2B-v3); None: the global T
         return self
 
     def _new_cache(self):

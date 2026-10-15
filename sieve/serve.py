@@ -5,8 +5,8 @@
 POST /v1/decide  {"state": ..., "questions": {...}, "temperature": optional}  ->  typed answers with probabilities
 GET  /v1/models  loaded model, temperature, CUDA-graph and prefix-cache state
 
-Pointer-head models (Sieve-27B, Sieve-9B-v2, Sieve-9B) get the prefix cache and CUDA graphs. Every other model is
-answered through sieve.decide, with its temperature fixed at load time.
+Pointer-head models (Sieve-27B, Sieve-9B-v2, Sieve-9B, Sieve-2B-v3) get the prefix cache and CUDA graphs. Every
+other model is answered through sieve.decide, with its temperature fixed at load time.
 """
 import argparse
 import threading
