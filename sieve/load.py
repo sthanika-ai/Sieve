@@ -58,6 +58,45 @@ def base_of(path):
     return base, BASE_REVISIONS.get(base)
 
 
+def full_layers_of(path):
+    """True for a full fine-tune stored as an adapter (Sieve-2B-v3): trained modules as PEFT modules_to_save and a LoRA
+    that is exactly zero. Its weights can be copied into the backbone directly; ordinary LoRA adapters give False."""
+    with open(os.path.join(path, "adapter_config.json")) as f:
+        if not json.load(f).get("modules_to_save"):
+            return False
+    from safetensors import safe_open
+    with safe_open(os.path.join(path, "adapter_model.safetensors"), "pt", device="cpu") as f:
+        lora = {}
+        for k in f.keys():
+            if ".lora_" in k:
+                lora.setdefault(k.split(".lora_")[0], []).append(f.get_tensor(k))
+    return all(any(not t.any() for t in ts) for ts in lora.values())
+
+
+@torch.no_grad()
+def load_full_layers(lm, path):
+    """Copy a full fine-tune's trained modules into the backbone in place, tensor by tensor. The result is the model
+    PEFT builds (merged or not, as its LoRA is zero), without PEFT's copy of every trained module: for a 27B that copy
+    would need about 2.5x the layers' size on the GPU on top of the backbone."""
+    from safetensors import safe_open
+    params = lm.state_dict(keep_vars=True)          # parameters and persistent buffers, as PEFT saves them
+    with open(os.path.join(path, "adapter_config.json")) as f:
+        modules = json.load(f)["modules_to_save"]
+    want = {n for n in params if any(n.startswith(m + ".") for m in modules)}
+    done = set()
+    with safe_open(os.path.join(path, "adapter_model.safetensors"), "pt", device="cpu") as f:
+        for k in f.keys():
+            if ".lora_" in k:
+                continue
+            n = k[len("base_model.model."):] if k.startswith("base_model.model.") else k
+            if n not in want:
+                raise ValueError(f"{path}: {k} is not a tensor of a module to save")
+            params[n].copy_(f.get_tensor(k))
+            done.add(n)
+    if done != want:
+        raise ValueError(f"{path}: {len(want - done)} tensors of the modules to save are missing, e.g. {sorted(want - done)[:3]}")
+
+
 def load_pointer(path_or_repo, base=None, base_revision=None, device="cuda", dtype=torch.bfloat16,
                  merge=True, temperature=None):
     """Load a pointer-head model's adapter and head from a local folder or a Hugging Face repo onto its pinned backbone.
@@ -66,7 +105,8 @@ def load_pointer(path_or_repo, base=None, base_revision=None, device="cuda", dty
 
     The model's trained token limits (limits_of) become its encode defaults, used by decide and the server.
 
-    merge=True folds the adapter into the backbone for speed; merge=False keeps the exact unmerged forward.
+    merge=True folds the adapter into the backbone for speed; merge=False keeps the exact unmerged forward. A full
+    fine-tune (full_layers_of) is copied into the backbone in place either way: both forwards are that model.
     temperature overrides the calibrated temperatures stored in head.pt, the global one and any per-category ones,
     for every question (1.0 gives raw logits).
     """
@@ -81,13 +121,17 @@ def load_pointer(path_or_repo, base=None, base_revision=None, device="cuda", dty
         name = snapshot_download(base, revision=base_revision, allow_patterns=["*.json", "*.safetensors", "*.txt", "*.jinja"])
     m = SieveModel(name, device=device, dtype=dtype)
     m.base_model = base
-    m.lm = PeftModel.from_pretrained(m.lm, path, is_trainable=False)
+    full = full_layers_of(path)
+    if full:
+        load_full_layers(m.lm, path)
+    else:
+        m.lm = PeftModel.from_pretrained(m.lm, path, is_trainable=False)
     m.load_head(path)
     m.max_state, m.max_branch = limits_of(path)
     if temperature is not None:
         m.head.temperature = float(temperature)
         m.temperatures = None
-    if merge:
+    if merge and not full:
         m.lm = m.lm.merge_and_unload()
     m.lm.eval()
     m.head.eval()
