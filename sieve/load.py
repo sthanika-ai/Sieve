@@ -2,7 +2,7 @@
 
 Sieve models come in four designs, told apart by their files:
 
-    pointer  head.pt                    Sieve-27B, Sieve-9B-v2, Sieve-9B, Sieve-2B-v3
+    pointer  head.pt                    Sieve-27B-v2, Sieve-27B, Sieve-9B-v2, Sieve-9B, Sieve-2B-v3
                                                                             (sieve.model)
     fork     config.json (sieve-hybrid-fork) + head.safetensors
                                         Sieve-2B-v2, Sieve-2B, Sieve-0.8B   (sieve.fork)
@@ -59,7 +59,7 @@ def base_of(path):
 
 
 def full_layers_of(path):
-    """True for a full fine-tune stored as an adapter (Sieve-2B-v3): trained modules as PEFT modules_to_save and a LoRA
+    """True for a full fine-tune stored as an adapter (Sieve-27B-v2, Sieve-2B-v3): trained modules as PEFT modules_to_save and a LoRA
     that is exactly zero. Its weights can be copied into the backbone directly; ordinary LoRA adapters give False."""
     with open(os.path.join(path, "adapter_config.json")) as f:
         if not json.load(f).get("modules_to_save"):
@@ -188,7 +188,7 @@ def load_sieve(path_or_repo, base=None, base_revision=None, device="cuda", dtype
                temperature=None, **options):
     """Load any Sieve model from a local folder or a Hugging Face repo.
 
-    The arguments of a pointer-head model (Sieve-27B, Sieve-9B-v2, Sieve-9B, Sieve-2B-v3) are those of load_pointer. temperature
+    The arguments of a pointer-head model (Sieve-27B-v2, Sieve-27B, Sieve-9B-v2, Sieve-9B, Sieve-2B-v3) are those of load_pointer. temperature
     overrides any model's calibrated temperatures (1.0 gives raw probabilities). Other options go to the model's own
     loader: prefix_cache_gb for Sieve-4B; revision for the option-fork models; split, max_tokens and fwd_tokens for
     Sieve-31B, whose base and base_revision are its backbone.

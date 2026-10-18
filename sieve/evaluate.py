@@ -172,7 +172,7 @@ def main():
 
     from .load import family_of, load_pointer
     if family_of(a.model) != "pointer":
-        raise SystemExit("sieve-eval works with the pointer-head models (Sieve-27B, Sieve-9B-v2, Sieve-9B, Sieve-2B-v3); "
+        raise SystemExit("sieve-eval works with the pointer-head models (Sieve-27B-v2, Sieve-27B, Sieve-9B-v2, Sieve-9B, Sieve-2B-v3); "
                          "use the Decision Index engine or decide() for the others")
     m = load_pointer(a.model, base=a.base, merge=not a.no_merge)
     t = float(m.head.temperature)
