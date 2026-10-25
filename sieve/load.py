@@ -8,7 +8,7 @@ Sieve models come in four designs, told apart by their files:
                                         Sieve-2B-v2, Sieve-2B, Sieve-0.8B   (sieve.fork)
     codes    sieve_config.json          Sieve-4B                            (sieve.codes)
     slots    adapter_config.json on Gemma-4-31B-it, no head
-                                        Sieve-31B                           (sieve.slots)
+                                        Sieve-31B-v2, Sieve-31B             (sieve.slots)
 
 load_sieve and decide work with all of them.
 """

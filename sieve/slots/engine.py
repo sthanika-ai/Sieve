@@ -1,4 +1,7 @@
-"""Decision Index engine for Sieve-31B: google/gemma-4-31B-it + the Sieve-31B LoRA adapter, read at answer slots.
+"""Decision Index engine for Sieve-31B and Sieve-31B-v2: google/gemma-4-31B-it + the release's weights, read at answer slots.
+
+- Sieve-31B: a LoRA adapter, applied unmerged. Sieve-31B-v2: a full fine-tune of the decoder layers (stored as an adapter,
+  loaded in place) with non-causal global layers, as trained. sieve/slots/readout.py reads both from the release's files.
 
 - Prompts and batching come from the decider-ai package (pip, version 1.6.0), used unmodified: its chat layout puts one
   user turn in the model's own chat template with thinking switched off and one "Answer: (" slot per question; options
@@ -65,11 +68,14 @@ class SlotsEngine(Engine):
         self.d.chat = chat_template(self.d.m.tok)
         self.max_tokens = int(max_tokens)
         self.fwd_tokens = int(fwd_tokens)
+        m = self.d.m
+        self.model_id = adapter
         self.provenance = {
-            "kind": "LoRA adapter",
+            "kind": "full fine-tune (decoder layers, stored as an adapter)" if m.full_release else "LoRA adapter",
+            "attention": m.attention,
             "base": f"{base}@{revision}",
             "adapter": adapter,
-            "policy": "base model + LoRA (unmerged) in its chat template with thinking off, one answer slot per question, "
+            "policy": "base model + the release's weights in its chat template with thinking off, one answer slot per question, "
                       "softmax of the option-label logits at a fixed temperature; independent rows; rows over max_tokens "
                       "are refused, never truncated",
             "temperature": float(temperature),
@@ -104,6 +110,6 @@ class SlotsEngine(Engine):
                 if budget <= longest:
                     raise RuntimeError(f"CUDA OOM on a single {longest}-token row")
                 budget = max(longest, budget // 2)
-        resp = {"model": "sthanika-ai/Sieve-31B", "answers": assemble(rqs, index, flatp),
+        resp = {"model": self.model_id, "answers": assemble(rqs, index, flatp),
                 "usage": {"input_tokens": unique_tokens(items), "output_tokens": 0}}
         return resp, {"T": float(self.d.T), "index": [list(x) for x in index], "row_probs": flatp}
