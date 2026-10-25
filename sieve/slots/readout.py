@@ -7,8 +7,9 @@ masked.
 - Sieve-31B is a LoRA adapter, applied unmerged (PEFT), exactly as in training and in the submitted run.
 - Sieve-31B-v2 is a full fine-tune stored as an adapter (every decoder layer a PEFT modules_to_save module, next to a
   LoRA that is exactly zero, as Sieve-27B-v2). Its layers are copied into the backbone in place (sieve.load).
-- A release whose training_config.json says "attention": "bidir_global" (Sieve-31B-v2) was trained with the 10 global
-  (full-attention) layers non-causal: they attend to every prompt token, while the 50 sliding-window layers stay causal.
+- A release whose training_config.json says "attention": "bidir_global" (Sieve-31B-v2) was trained with bidirectional
+  attention in the 10 global (full-attention) layers: they attend to every prompt token, before and after it, while the
+  50 sliding-window layers stay causal.
   It is served the same way. One unpadded row passes no mask to the global layers, so they use the fused non-causal
   SDPA kernel (no extra cost); a padded batch passes a key-padding mask.
 

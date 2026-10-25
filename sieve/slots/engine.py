@@ -1,7 +1,7 @@
 """Decision Index engine for Sieve-31B and Sieve-31B-v2: google/gemma-4-31B-it + the release's weights, read at answer slots.
 
 - Sieve-31B: a LoRA adapter, applied unmerged. Sieve-31B-v2: a full fine-tune of the decoder layers (stored as an adapter,
-  loaded in place) with non-causal global layers, as trained. sieve/slots/readout.py reads both from the release's files.
+  loaded in place) with bidirectional attention in the global layers, as trained. sieve/slots/readout.py reads both from the release's files.
 
 - Prompts and batching come from the decider-ai package (pip, version 1.6.0), used unmodified: its chat layout puts one
   user turn in the model's own chat template with thinking switched off and one "Answer: (" slot per question; options
