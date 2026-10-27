@@ -23,22 +23,37 @@ Many steps in a product are decisions, not writing. Examples are routing a ticke
 |---|---|---|--:|--:|---|
 | Sieve-31B-v3 | [Gemma-4-31B-it](https://huggingface.co/google/gemma-4-31B-it) | letter readout | – ² | [71.68](https://huggingface.co/datasets/sthanika-ai/Sieve-31B-v3-decision-index-results) ² | [`sthanika-ai/Sieve-31B-v3`](https://huggingface.co/sthanika-ai/Sieve-31B-v3) |
 | Sieve-31B-v2 | [Gemma-4-31B-it](https://huggingface.co/google/gemma-4-31B-it) | answer slots | – ² | [69.97](https://huggingface.co/datasets/sthanika-ai/Sieve-31B-v2-decision-index-results) ² | [`sthanika-ai/Sieve-31B-v2`](https://huggingface.co/sthanika-ai/Sieve-31B-v2) |
-| Sieve-31B | [Gemma-4-31B-it](https://huggingface.co/google/gemma-4-31B-it) | answer slots | **63.8** | [62.52](https://huggingface.co/datasets/sthanika-ai/Sieve-31B-decision-index-results) | [`sthanika-ai/Sieve-31B`](https://huggingface.co/sthanika-ai/Sieve-31B) |
-| Sieve-27B-v2 | [Qwen3.8-27B](https://huggingface.co/Qwen/Qwen3.8-27B) | pointer head | – ² | [68.02](https://huggingface.co/datasets/sthanika-ai/Sieve-27B-v2-decision-index-results) ² | [`sthanika-ai/Sieve-27B-v2`](https://huggingface.co/sthanika-ai/Sieve-27B-v2) |
-| Sieve-27B | [Qwen3.8-27B](https://huggingface.co/Qwen/Qwen3.8-27B) | pointer head | **60.17** | [60.04](https://huggingface.co/datasets/sthanika-ai/Sieve-27B-decision-index-results) | [`sthanika-ai/Sieve-27B`](https://huggingface.co/sthanika-ai/Sieve-27B) |
-| Sieve-9B-v2 | [Qwen3.5-9B](https://huggingface.co/Qwen/Qwen3.5-9B) | pointer head | **50.89** | [53.35](https://huggingface.co/datasets/sthanika-ai/Sieve-9B-v2-decision-index-results) | [`sthanika-ai/Sieve-9B-v2`](https://huggingface.co/sthanika-ai/Sieve-9B-v2) |
-| Sieve-9B | [Qwen3.5-9B](https://huggingface.co/Qwen/Qwen3.5-9B) | pointer head | **44.59** | [41.88](https://huggingface.co/datasets/sthanika-ai/Sieve-9B-decision-index-results) | [`sthanika-ai/Sieve-9B`](https://huggingface.co/sthanika-ai/Sieve-9B) |
-| Sieve-4B | [Qwen3.5-4B](https://huggingface.co/Qwen/Qwen3.5-4B) | option codes | **46.11** | [50.06](https://huggingface.co/datasets/sthanika-ai/Sieve-4B-decision-index-results) | [`sthanika-ai/Sieve-4B`](https://huggingface.co/sthanika-ai/Sieve-4B) |
-| Sieve-2B-v3 | [Qwen3.5-2B](https://huggingface.co/Qwen/Qwen3.5-2B) | pointer head | – ² | [53.51](https://huggingface.co/datasets/sthanika-ai/Sieve-2B-v3-decision-index-results) ² | [`sthanika-ai/Sieve-2B-v3`](https://huggingface.co/sthanika-ai/Sieve-2B-v3) |
-| Sieve-2B-v2 | [Qwen3.5-2B-Base](https://huggingface.co/Qwen/Qwen3.5-2B-Base) | option fork | **30.84** | [37.26](https://huggingface.co/datasets/sthanika-ai/Sieve-2B-v2-decision-index-results) | [`sthanika-ai/Sieve-2B-v2`](https://huggingface.co/sthanika-ai/Sieve-2B-v2) |
-| Sieve-2B | [Qwen3.5-2B-Base](https://huggingface.co/Qwen/Qwen3.5-2B-Base) | option fork | **20.53** | [22.16](https://huggingface.co/datasets/sthanika-ai/Sieve-2B-decision-index-results) | [`sthanika-ai/Sieve-2B`](https://huggingface.co/sthanika-ai/Sieve-2B) |
-| Sieve-0.8B | [Qwen3.5-0.8B-Base](https://huggingface.co/Qwen/Qwen3.5-0.8B-Base) | option fork | **23.1** | [32.26](https://huggingface.co/datasets/sthanika-ai/Sieve-0.8B-decision-index-results)  | [`sthanika-ai/Sieve-0.8B`](https://huggingface.co/sthanika-ai/Sieve-0.8B) |
+| Sieve-31B | [Gemma-4-31B-it](https://huggingface.co/google/gemma-4-31B-it) | answer slots | **64.25** | [62.52](https://huggingface.co/datasets/sthanika-ai/Sieve-31B-decision-index-results) | [`sthanika-ai/Sieve-31B`](https://huggingface.co/sthanika-ai/Sieve-31B) |
+| Sieve-27B-v2 | [Qwen3.8-27B](https://huggingface.co/Qwen/Qwen3.8-27B) | pointer head | **59.89** | [68.02](https://huggingface.co/datasets/sthanika-ai/Sieve-27B-v2-decision-index-results) | [`sthanika-ai/Sieve-27B-v2`](https://huggingface.co/sthanika-ai/Sieve-27B-v2) |
+| Sieve-27B | [Qwen3.8-27B](https://huggingface.co/Qwen/Qwen3.8-27B) | pointer head | 60.17 ³ | [60.04](https://huggingface.co/datasets/sthanika-ai/Sieve-27B-decision-index-results) | [`sthanika-ai/Sieve-27B`](https://huggingface.co/sthanika-ai/Sieve-27B) |
+| Sieve-9B-v2 | [Qwen3.5-9B](https://huggingface.co/Qwen/Qwen3.5-9B) | pointer head | **47.00** | [53.35](https://huggingface.co/datasets/sthanika-ai/Sieve-9B-v2-decision-index-results) | [`sthanika-ai/Sieve-9B-v2`](https://huggingface.co/sthanika-ai/Sieve-9B-v2) |
+| Sieve-9B | [Qwen3.5-9B](https://huggingface.co/Qwen/Qwen3.5-9B) | pointer head | **41.73** | [41.88](https://huggingface.co/datasets/sthanika-ai/Sieve-9B-decision-index-results) | [`sthanika-ai/Sieve-9B`](https://huggingface.co/sthanika-ai/Sieve-9B) |
+| Sieve-4B | [Qwen3.5-4B](https://huggingface.co/Qwen/Qwen3.5-4B) | option codes | **40.96** | [50.06](https://huggingface.co/datasets/sthanika-ai/Sieve-4B-decision-index-results) | [`sthanika-ai/Sieve-4B`](https://huggingface.co/sthanika-ai/Sieve-4B) |
+| Sieve-2B-v3 | [Qwen3.5-2B](https://huggingface.co/Qwen/Qwen3.5-2B) | pointer head | **34.45** | [53.51](https://huggingface.co/datasets/sthanika-ai/Sieve-2B-v3-decision-index-results) | [`sthanika-ai/Sieve-2B-v3`](https://huggingface.co/sthanika-ai/Sieve-2B-v3) |
+| Sieve-2B-v2 | [Qwen3.5-2B-Base](https://huggingface.co/Qwen/Qwen3.5-2B-Base) | option fork | 30.84 ³ | [37.26](https://huggingface.co/datasets/sthanika-ai/Sieve-2B-v2-decision-index-results) | [`sthanika-ai/Sieve-2B-v2`](https://huggingface.co/sthanika-ai/Sieve-2B-v2) |
+| Sieve-2B | [Qwen3.5-2B-Base](https://huggingface.co/Qwen/Qwen3.5-2B-Base) | option fork | **21.90** | [22.16](https://huggingface.co/datasets/sthanika-ai/Sieve-2B-decision-index-results) | [`sthanika-ai/Sieve-2B`](https://huggingface.co/sthanika-ai/Sieve-2B) |
+| Sieve-0.8B | [Qwen3.5-0.8B-Base](https://huggingface.co/Qwen/Qwen3.5-0.8B-Base) | option fork | **20.82** | [32.26](https://huggingface.co/datasets/sthanika-ai/Sieve-0.8B-decision-index-results)  | [`sthanika-ai/Sieve-0.8B`](https://huggingface.co/sthanika-ai/Sieve-0.8B) |
 
-¹ From the [Decision Index leaderboard](https://huggingface.co/spaces/multimodalart/jev-decision-index), edition 0.3.2 (board data of 2026-10-14). The Full score ranks the board: the public benchmarks count 20%, the maintainers' private tests of the same skills 50% and their private tasks from new domains 30%. The Public score is the public suite alone; each one links to the model's complete results.
+¹ From the [Decision Index leaderboard](https://huggingface.co/spaces/multimodalart/jev-decision-index), edition 0.4.1 (board data of 2026-10-26). The Full score ranks the board: it comes from the maintainers' private tests, 60% tests of the same skills as the public benchmarks and 40% decision tasks from new domains. The Public score is the public suite alone; each one links to the model's complete results.
 
 ² Not on the leaderboard yet: our own run of the public 0.3 suite with the official [kit](https://github.com/apolinario/decision-index).
 
+³ No longer on the leaderboard, where its successor replaced it (Sieve-27B-v2 replaced Sieve-27B, Sieve-2B-v3 replaced Sieve-2B-v2). Full score from edition 0.3.2 (board data of 2026-10-14), which counted the public benchmarks 20%, the private tests of the same skills 50% and the private tasks from new domains 30%.
+
 Results, latency and training details are on each model's card.
+
+### Sieve-Vision
+
+The Sieve-Vision models answer multiple-choice questions about one or more images, with a calibrated probability for every option, and never write text. Their inference code is in their model repositories (`sieve_vision/`), not in this package; models and results are in the [Sieve-Vision collection](https://huggingface.co/collections/sthanika-ai/sieve-vision-6ad61203c0d53c2a58cc2f5b).
+
+| model | backbone | Full score ⁴ | Public score ⁴ | weights and model card |
+|---|---|--:|--:|---|
+| Sieve-Vision-27B | [Qwen3.8-27B](https://huggingface.co/Qwen/Qwen3.8-27B) | – ⁵ | [73.12](https://huggingface.co/datasets/sthanika-ai/Sieve-Vision-27B-decision-index-results) ⁵ | [`sthanika-ai/Sieve-Vision-27B`](https://huggingface.co/sthanika-ai/Sieve-Vision-27B) (CC BY-NC 4.0) |
+| Sieve-Vision-4B | [Qwen3.5-4B-Base](https://huggingface.co/Qwen/Qwen3.5-4B-Base) | **58.60** | [65.17](https://huggingface.co/datasets/sthanika-ai/Sieve-Vision-4B-decision-index-results) | [`sthanika-ai/Sieve-Vision-4B`](https://huggingface.co/sthanika-ai/Sieve-Vision-4B) |
+
+⁴ From the Decision Index vision leaderboard, edition 0.4 (board data of 2026-10-26): the Full score is half the public vision suite and half the maintainers' private vision tests.
+
+⁵ Not on the leaderboard yet: our own run of the public vision suite.
 
 ## How it works
 
