@@ -1,6 +1,6 @@
 """Load any Sieve model and answer typed decision requests.
 
-Sieve models come in four designs, told apart by their files:
+Sieve models come in five designs, told apart by their files:
 
     pointer  head.pt                    Sieve-27B-v2, Sieve-27B, Sieve-9B-v2, Sieve-9B, Sieve-2B-v3
                                                                             (sieve.model)
@@ -9,6 +9,8 @@ Sieve models come in four designs, told apart by their files:
     codes    sieve_config.json          Sieve-4B                            (sieve.codes)
     slots    adapter_config.json on Gemma-4-31B-it, no head
                                         Sieve-31B-v2, Sieve-31B             (sieve.slots)
+    letters  a full model (config.json + safetensors) and head.pt with readout "letters", no adapter
+                                        Sieve-31B-v3                        (sieve.letters)
 
 load_sieve and decide work with all of them.
 """
@@ -158,8 +160,20 @@ FAMILY_FILES = ["head.pt", "config.json", "sieve_config.json", "adapter_config.j
 SLOTS_BASES = {"google/gemma-4-31B-it"}          # answer-slot models: an adapter on one of these, no head file
 
 
+def is_letters(path):
+    """A letter-readout release: head.pt says readout "letters" and there is no adapter (every pointer-head model is an
+    adapter with head.pt, so its head.pt is never opened here)."""
+    if os.path.exists(os.path.join(path, "adapter_config.json")):
+        return False
+    try:
+        meta = torch.load(os.path.join(path, "head.pt"), map_location="cpu", weights_only=True)
+    except Exception:
+        return False
+    return isinstance(meta, dict) and meta.get("readout") == "letters"
+
+
 def family_of(path_or_repo):
-    """The design of a Sieve model (pointer, fork, codes or slots), from the files of its folder or Hub repo."""
+    """The design of a Sieve model (pointer, fork, codes, slots or letters), from the files of its folder or Hub repo."""
     if os.path.isdir(path_or_repo):
         path = path_or_repo
     else:
@@ -167,7 +181,7 @@ def family_of(path_or_repo):
         path = snapshot_download(path_or_repo, allow_patterns=FAMILY_FILES)
     has = lambda f: os.path.exists(os.path.join(path, f))
     if has("head.pt"):
-        return "pointer"
+        return "letters" if is_letters(path) else "pointer"
     if has("sieve_config.json"):
         return "codes"
     if has("config.json"):
@@ -191,9 +205,15 @@ def load_sieve(path_or_repo, base=None, base_revision=None, device="cuda", dtype
     The arguments of a pointer-head model (Sieve-27B-v2, Sieve-27B, Sieve-9B-v2, Sieve-9B, Sieve-2B-v3) are those of load_pointer. temperature
     overrides any model's calibrated temperatures (1.0 gives raw probabilities). Other options go to the model's own
     loader: prefix_cache_gb for Sieve-4B; revision for the option-fork models; split, max_tokens and fwd_tokens for
-    Sieve-31B, whose base and base_revision are its backbone.
+    Sieve-31B, whose base and base_revision are its backbone; max_tokens and budget_tokens for Sieve-31B-v3.
     """
     family = family_of(path_or_repo)
+    if family == "letters":
+        from .letters.engine import LettersEngine
+        e = LettersEngine(model=path_or_repo, device=device, dtype=str(dtype).replace("torch.", ""), **options)
+        if temperature is not None:
+            e.m.temperature, e.m.temperatures = float(temperature), None
+        return e
     if family == "pointer":
         return load_pointer(path_or_repo, base=base, base_revision=base_revision, device=device, dtype=dtype,
                             merge=merge, temperature=temperature)

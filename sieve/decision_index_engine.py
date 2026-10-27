@@ -6,7 +6,7 @@
 SieveEngine reads the model's design from its files. A pointer-head model (Sieve-27B-v2, Sieve-27B, Sieve-9B-v2, Sieve-9B,
 Sieve-2B-v3) runs in SieveEngine itself; any other model gets its design's engine: sieve.fork.engine.ForkEngine for Sieve-2B-v2, Sieve-2B
 and Sieve-0.8B, sieve.codes.decision_index_engine.CodesEngine for Sieve-4B, sieve.slots.engine.SlotsEngine for
-Sieve-31B. Other --option values go to that engine.
+Sieve-31B and Sieve-31B-v2, sieve.letters.engine.LettersEngine for Sieve-31B-v3. Other --option values go to that engine.
 
 A pointer model runs as it is served: adapter merged into the bf16 backbone, fp32 pointer head, calibrated temperature
 from head.pt (per question category when head.pt has a per-category table). A single question runs as one causal row
@@ -46,6 +46,9 @@ class SieveEngine(Engine):
         if family == "slots":
             from .slots.engine import SlotsEngine
             return SlotsEngine(model=model, **options)
+        if family == "letters":
+            from .letters.engine import LettersEngine
+            return LettersEngine(model=model, **options)
         return super().__new__(cls)
 
     def __init__(self, model, device="cuda", dtype="bfloat16", max_state_tokens=65536, max_question_tokens=32768,

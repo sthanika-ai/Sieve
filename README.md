@@ -21,6 +21,7 @@ Many steps in a product are decisions, not writing. Examples are routing a ticke
 
 | model | backbone | design | Full score ¹ | Public score ¹ | weights and model card |
 |---|---|---|--:|--:|---|
+| Sieve-31B-v3 | [Gemma-4-31B-it](https://huggingface.co/google/gemma-4-31B-it) | letter readout | – ² | [71.68](https://huggingface.co/datasets/sthanika-ai/Sieve-31B-v3-decision-index-results) ² | [`sthanika-ai/Sieve-31B-v3`](https://huggingface.co/sthanika-ai/Sieve-31B-v3) |
 | Sieve-31B-v2 | [Gemma-4-31B-it](https://huggingface.co/google/gemma-4-31B-it) | answer slots | – ² | [69.97](https://huggingface.co/datasets/sthanika-ai/Sieve-31B-v2-decision-index-results) ² | [`sthanika-ai/Sieve-31B-v2`](https://huggingface.co/sthanika-ai/Sieve-31B-v2) |
 | Sieve-31B | [Gemma-4-31B-it](https://huggingface.co/google/gemma-4-31B-it) | answer slots | **63.8** | [62.52](https://huggingface.co/datasets/sthanika-ai/Sieve-31B-decision-index-results) | [`sthanika-ai/Sieve-31B`](https://huggingface.co/sthanika-ai/Sieve-31B) |
 | Sieve-27B-v2 | [Qwen3.8-27B](https://huggingface.co/Qwen/Qwen3.8-27B) | pointer head | – ² | [68.02](https://huggingface.co/datasets/sthanika-ai/Sieve-27B-v2-decision-index-results) ² | [`sthanika-ai/Sieve-27B-v2`](https://huggingface.co/sthanika-ai/Sieve-27B-v2) |
@@ -41,11 +42,12 @@ Results, latency and training details are on each model's card.
 
 ## How it works
 
-Every model reads a state and typed questions and returns a probability for every option. Only the text part of the backbone runs, so no model can produce text. The models come in four designs:
+Every model reads a state and typed questions and returns a probability for every option. Only the text part of the backbone runs, so no model can produce text. The models come in five designs:
 
 - **Pointer head** (Sieve-27B-v2, Sieve-27B, Sieve-9B-v2, Sieve-9B, Sieve-2B-v3). A LoRA adapter on a Qwen backbone (Sieve-27B-v2 and Sieve-2B-v3: fully fine-tuned; their trained layers are copied into the backbone in place when loaded). The state, each question and its options form one sequence. A small pointer head scores the hidden state at the end of each option against the one at the decision point. Each question runs as its own row from the state's cache, so questions never see each other.
 - **Option fork** (Sieve-2B-v2, Sieve-2B, Sieve-0.8B). The first 16 blocks of a Qwen3.5 base, adapted with LoRA (Sieve-0.8B: fully fine-tuned). The state and the question are encoded once, the encoding is copied once per option, and each option is scored as its own continuation by a scalar head. No option sees another, so reordering the options cannot change the answer.
 - **Option codes** (Sieve-4B). A LoRA adapter on Qwen3.5-4B. The options are listed under codes (A, B, …, AA, …), and a 255-way head, initialised from the backbone's own output rows for those codes, reads the decision point. A yes/no question is asked with its options in both orders and the two answers are averaged.
+- **Letter readout** (Sieve-31B-v3). Gemma-4-31B-it, fully fine-tuned and stored as a full model with a `head.pt`. All the questions of a request share one prompt in the model's chat template: a shared block (system turn, the list of questions, the state), then one block per question with its labelled options and an `Answer: (` slot, where the model's own output-layer logits of the option labels give the answer. In the 10 global attention layers the shared block attends only to itself and each question's block attends to the shared block and to itself, in both directions, so questions never see each other; the 50 sliding-window layers stay causal, as in training. A `choice` question whose options may be reordered is read twice, with its options as given and rotated by half, and the two log-probability vectors are averaged.
 - **Answer slots** (Sieve-31B-v2, Sieve-31B). Gemma-4-31B-it with a LoRA adapter (Sieve-31B) or fully fine-tuned (Sieve-31B-v2: its decoder layers are copied into the backbone in place when loaded, and it uses bidirectional attention in its 10 global attention layers: they read the whole prompt in both directions, so the state is read in the light of the question and options that follow it, while the 50 sliding-window layers stay causal, as in training). Each question goes in the model's chat template with thinking off, followed by an answer slot, and the output rows of the option labels score that slot.
 
 `load_sieve` tells the designs apart from a model's files, so the same calls work for every model.
@@ -60,7 +62,7 @@ pip install -r requirements.txt && pip install -e .
 
 - **Fused kernels.** Recommended for the Qwen3.5 and Qwen3.8 backbones: `pip install --no-build-isolation causal-conv1d==1.7.0`, the fused convolution kernel for their linear-attention layers. Without it, transformers uses a slower PyTorch fallback, whose probabilities can differ slightly.
 - **Sieve-31B-v2 and Sieve-31B** also need their prompt builder, installed without its dependencies: `pip install "sieve-decisions[slots] @ git+https://github.com/sthanika-ai/Sieve" && pip install --no-deps decider-ai==1.6.0`.
-- **GPU memory** in bf16: about 83 GB for Sieve-31B and 84 GB for Sieve-31B-v2 (one 96 GB GPU, or two GPUs with `split`), 52 GB for Sieve-27B-v2, 55 GB for Sieve-27B, 20 GB for Sieve-9B-v2 and Sieve-9B, 10 GB for Sieve-4B, and 5 to 11 GB for Sieve-2B-v3. The other 2B models and Sieve-0.8B need a few GB.
+- **GPU memory** in bf16: 58 GiB of weights for Sieve-31B-v3 (its longest public Decision Index request, 53,703 tokens, peaked at 81 GiB: one 96 GB GPU), about 83 GB for Sieve-31B and 84 GB for Sieve-31B-v2 (one 96 GB GPU, or two GPUs with `split`), 52 GB for Sieve-27B-v2, 55 GB for Sieve-27B, 20 GB for Sieve-9B-v2 and Sieve-9B, 10 GB for Sieve-4B, and 5 to 11 GB for Sieve-2B-v3. The other 2B models and Sieve-0.8B need a few GB.
 
 ## Use
 
@@ -87,13 +89,14 @@ decide(m,
 | `noul` | yes / no | P(yes) |
 | `score` | an ordered list of levels | the expected level, a confidence, a probability per level |
 
-- **Question types.** Every model answers `choice` and `noul`. The option-fork models (Sieve-2B-v2, Sieve-2B, Sieve-0.8B) do not answer `score`. Sieve-27B-v2 and Sieve-2B-v3 answer `score`, but their training data had only `choice` and `noul` questions. Some models add a few fields to an answer beyond those above.
-- **Temperatures.** Each model stores its calibrated temperatures with its weights. They never change an answer. Sieve-27B and Sieve-9B have one temperature in `head.pt`. Sieve-27B-v2, Sieve-9B-v2 and Sieve-2B-v3 also have one per question category: the question's type, its number of options (2, 3-4, 5-9, 10-25, 26+) and the kind of state (empty, text or JSON). A question takes the temperature of its most specific category in the table (`choice:3-4:text`, then `choice:3-4`, then `choice`), else the global one. Sieve-4B has one per question type, the option-fork models have one in `config.json`, and Sieve-31B-v2 and Sieve-31B use 8.5495, their training temperature. `load_sieve(..., temperature=1.0)` gives the raw distribution. For the pointer-head models, `decide(..., temperature=...)` also overrides it for one request.
+- **Question types.** Every model answers `choice` and `noul`. The option-fork models (Sieve-2B-v2, Sieve-2B, Sieve-0.8B) do not answer `score`. Sieve-31B-v3, Sieve-27B-v2 and Sieve-2B-v3 answer `score`, but their training data had only `choice` and `noul` questions. Some models add a few fields to an answer beyond those above.
+- **Temperatures.** Each model stores its calibrated temperatures with its weights. They never change an answer. Sieve-27B and Sieve-9B have one temperature in `head.pt`. Sieve-31B-v3 (whose `head.pt` holds them), Sieve-27B-v2, Sieve-9B-v2 and Sieve-2B-v3 also have one per question category: the question's type, its number of options (2, 3-4, 5-9, 10-25, 26+) and the kind of state (empty, text or JSON). A question takes the temperature of its most specific category in the table (`choice:3-4:text`, then `choice:3-4`, then `choice`), else the global one. Sieve-4B has one per question type, the option-fork models have one in `config.json`, and Sieve-31B-v2 and Sieve-31B use 8.5495, their training temperature. `load_sieve(..., temperature=1.0)` gives the raw distribution. For the pointer-head models, `decide(..., temperature=...)` also overrides it for one request.
 - **Token limits.** A request over a model's limits is refused, never truncated:
   - pointer head: the limits each model was trained with, from its `training_config.json`. That is 16,384 tokens for the state and 16,384 for each question with its options for Sieve-27B-v2, Sieve-27B, Sieve-9B-v2 and Sieve-2B-v3, and 8,192 for Sieve-9B. `m.encode(..., max_state=...)` and `sieve-eval --max-state` override them.
   - option fork: 32,768 tokens for the state, the question and the longest option.
   - Sieve-4B: 32,768 tokens for the state plus the longest question and 65,536 per request, with up to 10 score levels.
   - Sieve-31B-v2 and Sieve-31B: 32,768 tokens for each question's prompt.
+  - Sieve-31B-v3: none declared (it was trained on prompts of up to 16,384 tokens); a request that does not fit in GPU memory fails with an error.
 - **Example script.** [`examples/quickstart.py`](examples/quickstart.py) runs the request above on Sieve-9B, which needs about 20 GB of GPU memory.
 
 ## HTTP server
@@ -142,6 +145,7 @@ The engine reads the model's design from its files and runs the model as it is s
 - **Pointer head.** The adapter is merged into the bf16 backbone (a full fine-tune's layers are copied in place). The declared limits are a 65,536-token state, a 32,768-token question and 255 options; in our runs of Sieve-27B and Sieve-9B-v2, 241 requests had a question longer than 16,384 tokens and were answered in full.
 - **Option fork.** bf16, with every question of a request scored in as few passes as memory allows. `--option mem_fraction=0.16` caps one process's share of a GPU when several share it.
 - **Sieve-4B.** Each request is answered as its `/v1/systemone` server answers it: bf16, adapter merged, yes/no asked in both orders.
+- **Sieve-31B-v3.** bf16, served by `sieve.letters` as described above: the prompt, the attention rule, the two option orders and the per-category temperatures come from `head.pt`. In a request with several questions and a shared block of 2,048 tokens or more, the shared block is computed once and its keys and values serve every question and both orders, which gives the same result as computing it with each question. No token limit is declared; up to 255 options.
 - **Sieve-31B-v2 and Sieve-31B.** The backbone loads at its pinned revision. Sieve-31B's adapter stays unmerged; Sieve-31B-v2's layers are copied in place and its global layers run with bidirectional attention (read from `"attention": "bidir_global"` in its `training_config.json`). `--option split='{"0": "40GiB", "1": "40GiB"}'` spreads the model over two GPUs.
 
 ## Tests
