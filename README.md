@@ -8,6 +8,8 @@ This repository holds the code for every Sieve model. The weights, model cards a
 [![Collection](https://img.shields.io/badge/%F0%9F%A4%97%20collection-Sieve-FFD21E?style=flat-square&labelColor=1E281F)](https://huggingface.co/collections/sthanika-ai/sieve-6abb93a61dd495f69811c586)
 [![Decision Index](https://img.shields.io/badge/leaderboard-Decision%20Index-FFD21E?style=flat-square&labelColor=1E281F)](https://huggingface.co/spaces/multimodalart/jev-decision-index)
 
+🏆 **[Sieve-31B-v3](https://huggingface.co/sthanika-ai/Sieve-31B-v3) is ranked #1 (tied) on the [Decision Index leaderboard](https://huggingface.co/spaces/multimodalart/jev-decision-index)**, with a Full score of 71.10 (edition 0.4.1, board data of 2026-10-28).
+
 ## What Sieve is for
 
 Many steps in a product are decisions, not writing. Examples are routing a ticket, classifying a document, checking a request against a policy, or picking the tool to call. Sieve answers these directly:
@@ -21,9 +23,9 @@ Many steps in a product are decisions, not writing. Examples are routing a ticke
 
 | model | backbone | design | Full score ¹ | Public score ¹ | weights and model card |
 |---|---|---|--:|--:|---|
-| Sieve-31B-v3 | [Gemma-4-31B-it](https://huggingface.co/google/gemma-4-31B-it) | letter readout | – ² | [71.68](https://huggingface.co/datasets/sthanika-ai/Sieve-31B-v3-decision-index-results) ² | [`sthanika-ai/Sieve-31B-v3`](https://huggingface.co/sthanika-ai/Sieve-31B-v3) |
+| Sieve-31B-v3 | [Gemma-4-31B-it](https://huggingface.co/google/gemma-4-31B-it) | letter readout | **71.10** | [71.68](https://huggingface.co/datasets/sthanika-ai/Sieve-31B-v3-decision-index-results) | [`sthanika-ai/Sieve-31B-v3`](https://huggingface.co/sthanika-ai/Sieve-31B-v3) |
 | Sieve-31B-v2 | [Gemma-4-31B-it](https://huggingface.co/google/gemma-4-31B-it) | answer slots | – ² | [69.97](https://huggingface.co/datasets/sthanika-ai/Sieve-31B-v2-decision-index-results) ² | [`sthanika-ai/Sieve-31B-v2`](https://huggingface.co/sthanika-ai/Sieve-31B-v2) |
-| Sieve-31B | [Gemma-4-31B-it](https://huggingface.co/google/gemma-4-31B-it) | answer slots | **64.25** | [62.52](https://huggingface.co/datasets/sthanika-ai/Sieve-31B-decision-index-results) | [`sthanika-ai/Sieve-31B`](https://huggingface.co/sthanika-ai/Sieve-31B) |
+| Sieve-31B | [Gemma-4-31B-it](https://huggingface.co/google/gemma-4-31B-it) | answer slots | 64.25 ³ | [62.52](https://huggingface.co/datasets/sthanika-ai/Sieve-31B-decision-index-results) | [`sthanika-ai/Sieve-31B`](https://huggingface.co/sthanika-ai/Sieve-31B) |
 | Sieve-27B-v2 | [Qwen3.8-27B](https://huggingface.co/Qwen/Qwen3.8-27B) | pointer head | **59.89** | [68.02](https://huggingface.co/datasets/sthanika-ai/Sieve-27B-v2-decision-index-results) | [`sthanika-ai/Sieve-27B-v2`](https://huggingface.co/sthanika-ai/Sieve-27B-v2) |
 | Sieve-27B | [Qwen3.8-27B](https://huggingface.co/Qwen/Qwen3.8-27B) | pointer head | 60.17 ³ | [60.04](https://huggingface.co/datasets/sthanika-ai/Sieve-27B-decision-index-results) | [`sthanika-ai/Sieve-27B`](https://huggingface.co/sthanika-ai/Sieve-27B) |
 | Sieve-9B-v2 | [Qwen3.5-9B](https://huggingface.co/Qwen/Qwen3.5-9B) | pointer head | **47.00** | [53.35](https://huggingface.co/datasets/sthanika-ai/Sieve-9B-v2-decision-index-results) | [`sthanika-ai/Sieve-9B-v2`](https://huggingface.co/sthanika-ai/Sieve-9B-v2) |
@@ -34,11 +36,11 @@ Many steps in a product are decisions, not writing. Examples are routing a ticke
 | Sieve-2B | [Qwen3.5-2B-Base](https://huggingface.co/Qwen/Qwen3.5-2B-Base) | option fork | **21.90** | [22.16](https://huggingface.co/datasets/sthanika-ai/Sieve-2B-decision-index-results) | [`sthanika-ai/Sieve-2B`](https://huggingface.co/sthanika-ai/Sieve-2B) |
 | Sieve-0.8B | [Qwen3.5-0.8B-Base](https://huggingface.co/Qwen/Qwen3.5-0.8B-Base) | option fork | **20.82** | [32.26](https://huggingface.co/datasets/sthanika-ai/Sieve-0.8B-decision-index-results)  | [`sthanika-ai/Sieve-0.8B`](https://huggingface.co/sthanika-ai/Sieve-0.8B) |
 
-¹ From the [Decision Index leaderboard](https://huggingface.co/spaces/multimodalart/jev-decision-index), edition 0.4.1 (board data of 2026-10-26). The Full score ranks the board: it comes from the maintainers' private tests, 60% tests of the same skills as the public benchmarks and 40% decision tasks from new domains. The Public score is the public suite alone; each one links to the model's complete results.
+¹ From the [Decision Index leaderboard](https://huggingface.co/spaces/multimodalart/jev-decision-index), edition 0.4.1 (board data of 2026-10-28). The Full score ranks the board: it comes from the maintainers' private tests, 60% tests of the same skills as the public benchmarks and 40% decision tasks from new domains. The Public score is the public suite alone; each one links to the model's complete results.
 
 ² Not on the leaderboard yet: our own run of the public 0.3 suite with the official [kit](https://github.com/apolinario/decision-index).
 
-³ No longer on the leaderboard, where its successor replaced it (Sieve-27B-v2 replaced Sieve-27B, Sieve-2B-v3 replaced Sieve-2B-v2). Full score from edition 0.3.2 (board data of 2026-10-14), which counted the public benchmarks 20%, the private tests of the same skills 50% and the private tasks from new domains 30%.
+³ No longer on the leaderboard, where its successor replaced it. Sieve-31B-v3 replaced Sieve-31B (Full score from edition 0.4.1, board data of 2026-10-26). Sieve-27B-v2 replaced Sieve-27B and Sieve-2B-v3 replaced Sieve-2B-v2 (Full scores from edition 0.3.2, board data of 2026-10-14), which counted the public benchmarks 20%, the private tests of the same skills 50% and the private tasks from new domains 30%.
 
 Results, latency and training details are on each model's card.
 
