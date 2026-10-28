@@ -10,6 +10,10 @@ This repository holds the code for every Sieve model. The weights, model cards a
 
 🏆 **[Sieve-31B-v3](https://huggingface.co/sthanika-ai/Sieve-31B-v3) is ranked #1 (tied) on the [Decision Index leaderboard](https://huggingface.co/spaces/multimodalart/jev-decision-index)**, with a Full score of 71.10 (edition 0.4.1, board data of 2026-10-28).
 
+<img src="assets/decision-index-leaderboard-2026-10-28.png" alt="The Decision Index leaderboard on 2026-10-28, with Sieve-31B-v3 in the #1 (tied) group at a Full score of 71.1" width="640">
+
+*The Decision Index leaderboard on 2026-10-28.*
+
 ## What Sieve is for
 
 Many steps in a product are decisions, not writing. Examples are routing a ticket, classifying a document, checking a request against a policy, or picking the tool to call. Sieve answers these directly:
