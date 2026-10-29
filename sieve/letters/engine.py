@@ -17,7 +17,7 @@ try:
 except ImportError:                                  # the kit is only needed to run the Decision Index
     from .._kit import Engine, Unsupported
 
-from ..api import MAX_OPTIONS, to_answers, to_record
+from ..api import MAX_OPTIONS, choice_confidence, to_answers, to_record
 from ..calibration import question_temperatures
 from .model import LetterModel
 from .model import Unsupported as TooLong
@@ -68,10 +68,12 @@ class LettersEngine(Engine):
 
     @torch.no_grad()
     def __call__(self, state, questions):
+        labels = len(getattr(getattr(self.m, "fmt", None), "label_ids", None) or ()) or MAX_OPTIONS
+        limit = min(MAX_OPTIONS, labels)               # SIEVE_MAX_OPTIONS can raise MAX_OPTIONS past the 255 labels
         for k, q in (questions or {}).items():
             if isinstance(q, dict) and q.get("type") == "choice" and isinstance(q.get("criteria"), dict) \
-                    and len(q["criteria"]) > MAX_OPTIONS:
-                raise Unsupported(f"question {k!r} has {len(q['criteria'])} options (declared limit {MAX_OPTIONS})")
+                    and len(q["criteria"]) > limit:
+                raise Unsupported(f"question {k!r} has {len(q['criteria'])} options (declared limit {limit})")
         _, _, meta = to_record(state, questions)
         try:
             z = self.m.logits_many([(state, questions)], budget=self.budget)[0]
@@ -87,9 +89,9 @@ class LettersEngine(Engine):
             if mi["type"] == "noul":
                 answers[mi["id"]] = {"type": "noul", "noul": p[1]}
             elif mi["type"] == "score":                     # levels in order (no score question in the Decision Index)
-                answers.update(to_answers([p], [mi]))
+                answers.update(to_answers([p], [mi], decimals=None))
             else:
                 keys = mi["keys"]
                 answers[mi["id"]] = {"type": "choice", "choice": keys[max(range(len(p)), key=p.__getitem__)],
-                                     "probabilities": dict(zip(keys, p))}
+                                     "confidence": choice_confidence(p), "probabilities": dict(zip(keys, p))}
         return {"model": self.provenance["model"], "answers": answers}, None

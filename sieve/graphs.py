@@ -83,7 +83,9 @@ class CudaGraphRunner:
         return g
 
     @torch.no_grad()
-    def logits(self, rec, prefix, temperature=None):
+    def logits(self, rec, prefix=None, temperature=None):
+        """prefix: the state's prefill (sieve-serve's cache), or None to compute it here, only when a graph runs: a
+        request past the graph limit goes to m.logits, which may not need it (one long question runs as one row)."""
         m = self.m
         Ls = rec["n_state"]
         _, _, rows = rows_of(rec)
@@ -96,6 +98,8 @@ class CudaGraphRunner:
         if key not in self.graphs:
             self.graphs[key] = self._capture(*key)
         g = self.graphs[key]
+        if prefix is None:
+            prefix = m.prefill_from_record(rec)
         src = prefix["cache"]
         for i, l in enumerate(src.layers if hasattr(src, "layers") else []):
             if i in g["attn"]:

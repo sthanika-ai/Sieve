@@ -121,3 +121,32 @@ def test_state_once_only_where_it_applies(tiny):
     assert m.uses_state_once(60, 3, 2, short=False)                    # too long to read twice: the packs' attention
     m.PREFIX_MIN = 0
     assert not m.uses_state_once(10 ** 6, 3, 1, short=False)           # 0 switches it off
+
+
+def test_engine_answers_in_typed_format():
+    """LettersEngine's answers have every typed-answer field: choice with confidence, noul as P(yes), score via
+    to_answers. A stub model returns fixed logits, so no weights are needed."""
+    import math
+    from sieve.api import choice_confidence, score_confidence
+    from sieve.letters.engine import LettersEngine
+
+    class Stub:
+        temperature, temperatures = 1.0, None
+
+        def logits_many(self, requests, budget):
+            return [[torch.tensor([2.0, 0.5, 0.1, -1.0]), torch.tensor([-1.0, 1.0]), torch.tensor([0.0, 1.0, 3.0])]]
+
+    e = LettersEngine.__new__(LettersEngine)
+    e.m, e.budget, e.provenance = Stub(), 16384, {"model": "stub"}
+    qs = {"team": {"type": "choice", "instructions": "Which team?", "criteria": {"a": None, "b": None, "c": None, "d": None}},
+          "yes": {"type": "noul", "instructions": "Leaving?"},
+          "lvl": {"type": "score", "instructions": "How angry?", "criteria": ["calm", "annoyed", "furious"]}}
+    body, _ = e("state", qs)
+    a = body["answers"]
+    p = torch.softmax(torch.tensor([2.0, 0.5, 0.1, -1.0]), -1).tolist()
+    assert a["team"]["choice"] == "a" and math.isclose(a["team"]["confidence"], choice_confidence(p))
+    assert set(a["team"]) == {"type", "choice", "confidence", "probabilities"}
+    assert set(a["yes"]) == {"type", "noul"} and math.isclose(a["yes"]["noul"], torch.softmax(torch.tensor([-1.0, 1.0]), -1)[1].item())
+    q = torch.softmax(torch.tensor([0.0, 1.0, 3.0]), -1).tolist()
+    assert set(a["lvl"]) == {"type", "score", "legend", "confidence", "probabilities"}
+    assert math.isclose(a["lvl"]["confidence"], score_confidence(q))         # the engine keeps full precision

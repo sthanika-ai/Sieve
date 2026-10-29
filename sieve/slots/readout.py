@@ -117,7 +117,9 @@ class SlotReadout(nn.Module):
         am = attention_mask.to(entry)
         if self.attention == "bidir_global":
             am = bidir_global_masks(am, self._window)
-        final = self.lm.model(input_ids=input_ids.to(entry), attention_mask=am).last_hidden_state
+        # one pass per prompt: no attention cache (by default the sliding layers would keep the whole prompt's keys and
+        # values, ~0.9 GB per 1,000 tokens on Gemma-4-31B); the hidden states are the same
+        final = self.lm.model(input_ids=input_ids.to(entry), attention_mask=am, use_cache=False).last_hidden_state
         at_slots = final[slot_batch.to(final.device), slot_idx.to(final.device)]
         rows = self.lm.lm_head.weight[self.letters]
         scores = (at_slots.to(rows.device) @ rows.T).float()

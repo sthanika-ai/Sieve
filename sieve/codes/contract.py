@@ -3,7 +3,8 @@
 Request models accept exactly what the official spec accepts (plus a lenient `state: null`, which the JS SDK can send),
 so pydantic's discriminated-union errors reproduce FastAPI's 422 bodies with the tag in `loc`
 (e.g. ["body","questions","urgency","score","criteria"]). Limits the spec does not encode (255 options, 10 score levels,
-32k / 64k tokens) are checked after parsing and raised as `ContractError`, rendered as `{"detail":{...}}`.
+32k / 64k tokens) are checked after parsing and raised as `ContractError`, rendered as `{"detail":{...}}`; the server
+also applies the input rules every Sieve model shares (sieve.api.validate_questions) as 400 invalid_request.
 """
 from __future__ import annotations
 

@@ -15,12 +15,13 @@ Sieve models come in five designs, told apart by their files:
 load_sieve and decide work with all of them.
 """
 import json
+import math
 import os
 
 import torch
 import torch.nn.functional as F
 
-from .api import to_answers, to_record
+from .api import standard_answers, to_answers, to_record, validate_questions
 from .model import SieveModel
 
 BASE_REVISIONS = {
@@ -112,6 +113,7 @@ def load_pointer(path_or_repo, base=None, base_revision=None, device="cuda", dty
     temperature overrides the calibrated temperatures stored in head.pt, the global one and any per-category ones,
     for every question (1.0 gives raw logits).
     """
+    check_temperature(temperature)
     from peft import PeftModel
     path = _resolve(path_or_repo)
     if base is None:
@@ -140,14 +142,26 @@ def load_pointer(path_or_repo, base=None, base_revision=None, device="cuda", dty
     return m
 
 
+MIN_TEMPERATURE = 1e-3
+
+
+def check_temperature(temperature):
+    """A temperature, wherever one is given (load time, decide, sieve-serve), is a finite number of at least
+    MIN_TEMPERATURE (1.0 = raw logits; None = the calibrated default): 0 would divide by zero, a negative one would
+    reverse the ranking, an infinite one would make every answer uniform, and a tinier one underflows in float32 / bf16
+    and turns the probabilities into NaN."""
+    if temperature is not None and not (math.isfinite(temperature) and temperature >= MIN_TEMPERATURE):
+        raise ValueError(f"temperature must be a finite number of at least {MIN_TEMPERATURE} (1.0 = raw logits; "
+                         "None = the calibrated default)")
+
+
 @torch.no_grad()
 def decide_pointer(m, state, questions, temperature=None, prefix=None):
     """Answer every question about one state with a pointer-head model.
 
     state: str | dict | list. questions: {id: {"type": "choice" | "noul" | "score", "instructions": ..., "criteria": ...}}.
     """
-    if temperature is not None and not temperature > 0:
-        raise ValueError("temperature must be > 0 (1.0 = raw logits; None = the calibrated default)")
+    check_temperature(temperature)
     text, qs, meta = to_record(state, questions)
     rec = m.encode(text, qs)
     if temperature is None:                         # the calibrated default: per category when head.pt has a table
@@ -207,6 +221,7 @@ def load_sieve(path_or_repo, base=None, base_revision=None, device="cuda", dtype
     loader: prefix_cache_gb for Sieve-4B; revision for the option-fork models; split, max_tokens and fwd_tokens for
     Sieve-31B, whose base and base_revision are its backbone; max_tokens and budget_tokens for Sieve-31B-v3.
     """
+    check_temperature(temperature)
     family = family_of(path_or_repo)
     if family == "letters":
         from .letters.engine import LettersEngine
@@ -225,7 +240,8 @@ def load_sieve(path_or_repo, base=None, base_revision=None, device="cuda", dtype
         return m
     if family == "codes":
         from .codes import load
-        e = load(path_or_repo, device="cuda:0" if device == "cuda" else device, merge=merge, **options)
+        # unrounded answers: decide rounds every model's the same way (Sieve-4B's own server rounds to 4 itself)
+        e = load(path_or_repo, device="cuda:0" if device == "cuda" else device, merge=merge, **{"decimals": None, **options})
         if temperature is not None:
             e.model.temperatures = {t: float(temperature) for t in e.model.temperatures}
         return e
@@ -245,19 +261,33 @@ def decide(m, state, questions, temperature=None, prefix=None):
     state: str | dict | list. questions: {id: {"type": "choice" | "noul" | "score", "instructions": ..., "criteria": ...}}.
     Returns {id: answer}; every answer has its "type" and either "choice", "confidence" and "probabilities" (choice),
     "noul" = P(yes) (noul) or "score", "confidence", "legend" and "probabilities" (score). Sieve-0.8B, Sieve-2B and
-    Sieve-2B-v2 answer choice and noul questions; temperature here works with pointer models only.
+    Sieve-2B-v2 answer choice and noul questions; temperature here works with pointer models only. Every model's
+    answers have exactly these fields, rounded to 4 decimals (sieve.api.standard_answers). Every model takes the same
+    questions (sieve.api.validate_questions) and refuses a request it cannot answer with a ValueError.
     """
+    validate_questions(questions)
     if isinstance(m, SieveModel):
-        return decide_pointer(m, state, questions, temperature=temperature, prefix=prefix)
+        return standard_answers(decide_pointer(m, state, questions, temperature=temperature, prefix=prefix), questions)
     if temperature is not None:
         raise ValueError("this model takes its temperature at load time: load_sieve(..., temperature=...)")
+    if prefix is not None:
+        raise ValueError("prefix (a cached state) works with the pointer-head models only")
     from .fork import Sieve
     if isinstance(m, Sieve):
         from .fork import decide as decide_fork
-        return decide_fork(m, state, questions)
+        return standard_answers(decide_fork(m, state, questions), questions)
     from .codes.engine import Engine as CodesServing
     if isinstance(m, CodesServing):
         from .codes import decide as decide_codes
-        return decide_codes(m, state, questions)["answers"]
-    response, _ = m(state, questions)                  # Sieve-31B: its Decision Index engine answers the request
-    return response["answers"]
+        from .codes.contract import ContractError
+        try:
+            body = decide_codes(m, state, questions)
+        except ContractError as e:
+            if e.status >= 500:                     # not the request's fault (529: out of GPU memory, retry)
+                raise
+            raise ValueError(e.message) from e      # Sieve-4B's refusals (token limits), as every model refuses
+        return standard_answers(body["answers"], questions)
+    response, stats = m(state, questions)    # Sieve-31B-v3, Sieve-31B-v2, Sieve-31B: their Decision Index engines answer
+    if type(m).__name__ == "SlotsEngine":   # from the unrounded probabilities (its answers come rounded)
+        return m.answers(state, questions, stats)
+    return standard_answers(response["answers"], questions)

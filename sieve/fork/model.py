@@ -5,7 +5,7 @@ Usage:
     from sieve.fork import Sieve
     s = Sieve.from_pretrained("sthanika-ai/Sieve-2B-v2")   # downloads the Qwen3.5 base once, applies the weights + head
     s.choice(state, "Which team should handle this?", ["Billing", "Technical support", "Sales"])
-    -> {"decision": "Billing", "index": 0, "confidence": 0.83, "probs": {...}}
+    -> {"decision": "Billing", "index": 0, "probability": 0.83, "confidence": 0.745, "probs": {...}}
 
 How it stays order-invariant (the property that lets an option list be shuffled with zero change
 to the answer): STATE + QUESTION is encoded once into a cache (attention KV plus the Gated
@@ -28,6 +28,8 @@ import torch
 import torch.nn.functional as F
 from safetensors.torch import load_file
 from transformers import AutoModelForCausalLM, AutoTokenizer, DynamicCache
+
+from ..api import choice_confidence
 
 
 def listed_question(question: str, options: list[str]) -> str:
@@ -190,9 +192,11 @@ class Sieve:
     # ---------------------------------------------------------------- public API
     def choice(self, state, question, options, schema=None):
         """Order-invariant Choice decision: options may be passed in any order with no change to
-        the result. Returns the decision, its calibrated confidence, and the full distribution.
+        the result. Returns the decision, its calibrated probability, the confidence every Sieve answer
+        reports (sieve.api.choice_confidence of the distribution: 0 when every option is equally likely,
+        1 when one option has all of it), and the full distribution.
 
-        Confidence is calibrated two ways, and you can use either or both:
+        The probability is calibrated two ways, and you can use either or both:
         - out of the box, with no labels: a single temperature fit once on data this model never
           trained or was tested on (`self.T`, in config.json), applied automatically here;
         - optionally sharper, if you have some labels for YOUR schema: call `fit_schema(name,
@@ -206,16 +210,20 @@ class Sieve:
         if cfg is not None:
             z = np.log(np.clip(conf, 1e-6, 1 - 1e-6) / (1 - np.clip(conf, 1e-6, 1 - 1e-6)))
             conf = float(1 / (1 + np.exp(-(cfg["a"] * z + cfg["b"]))))
-        return {"decision": options[i], "index": i, "confidence": conf,
+        return {"decision": options[i], "index": i, "probability": conf, "confidence": choice_confidence([float(x) for x in p]),
                 "probs": {o: float(x) for o, x in zip(options, p)}}
 
     def fit_schema(self, name, examples):
         """Optional, label-based upgrade over the built-in temperature, for one specific kind of
-        question ("schema"): a 2-parameter logistic (Platt) refit of the top-1 confidence, fit on
+        question ("schema"): a 2-parameter logistic (Platt) refit of the top-1 probability, fit on
         ~100 labelled examples `[(state, question, options, gold_index), ...]`. Never changes which
-        option is picked (the argmax), only how trustworthy its confidence number is. Call once per
+        option is picked (the argmax), only how trustworthy its probability is. Call once per
         schema, then pass `schema=name` to `choice(...)`."""
-        from sklearn.linear_model import LogisticRegression
+        try:
+            from sklearn.linear_model import LogisticRegression
+        except ImportError as e:
+            raise ImportError("fit_schema needs scikit-learn: pip install \"sieve-decisions[calibrate] @ "
+                              "git+https://github.com/sthanika-ai/Sieve\"") from e
         conf, correct = [], []
         for state, question, options, gold in examples:
             p = self._probs(state, question, options)

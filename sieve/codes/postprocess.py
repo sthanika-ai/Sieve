@@ -45,25 +45,31 @@ def round_distribution(p: Sequence[float], decimals: int) -> list[float]:
     return [float(x) for x in q]
 
 
-def assemble(question: Any, probs: Sequence[float], decimals: int = 4) -> dict:
+def assemble(question: Any, probs: Sequence[float], decimals: int | None = 4) -> dict:
     """question: a contract Question (pydantic) or dict with the same fields; probs: over the question's options in
-    serialization order (choice: criteria order; score: level order; noul: [P(no), P(yes)])."""
+    serialization order (choice: criteria order; score: level order; noul: [P(no), P(yes)]). decimals=None: no rounding
+    (sieve.decide rounds every model's answers the same way)."""
     qtype = question.type if hasattr(question, "type") else question["type"]
     p = normalize(probs)
+    if decimals is None:
+        round_ = lambda x, _d=None: x
+        dist = lambda q, _d=None: list(q)
+    else:
+        round_, dist = round, round_distribution
     if qtype == "noul":
-        return {"type": "noul", "noul": round(p[1], decimals), "stats": {}}
+        return {"type": "noul", "noul": round_(p[1], decimals), "stats": {}}
     if qtype == "choice":
         crit = question.criteria if hasattr(question, "criteria") else question["criteria"]
         keys = list(crit)
         best = max(range(len(p)), key=p.__getitem__)       # ties -> first in criteria order
         conf = choice_confidence(p)
-        return {"type": "choice", "choice": keys[best], "confidence": round(conf, decimals),
-                "probabilities": dict(zip(keys, round_distribution(p, decimals))), "stats": {}}
+        return {"type": "choice", "choice": keys[best], "confidence": round_(conf, decimals),
+                "probabilities": dict(zip(keys, dist(p, decimals))), "stats": {}}
     levels = question.criteria if hasattr(question, "criteria") else question["criteria"]
     score = sum(i * pi for i, pi in enumerate(p))
-    return {"type": "score", "score": round(score, decimals), "confidence": round(score_confidence(p), decimals),
+    return {"type": "score", "score": round_(score, decimals), "confidence": round_(score_confidence(p), decimals),
             "legend": {str(i): lv for i, lv in enumerate(levels)},
-            "probabilities": {str(i): v for i, v in enumerate(round_distribution(p, decimals))}, "stats": {}}
+            "probabilities": {str(i): v for i, v in enumerate(dist(p, decimals))}, "stats": {}}
 
 
 def output_token_count(answers: dict, count_tokens) -> int:

@@ -3,7 +3,7 @@ import json
 
 from sieve import decide, load_sieve
 
-m = load_sieve("sthanika-ai/Sieve-9B")
+m = load_sieve("sthanika-ai/Sieve-9B-v2")
 
 state = {"subject": "Duplicate charge on invoice 4411",
          "body": "Billed twice for March. Refund today or we cancel the annual contract."}

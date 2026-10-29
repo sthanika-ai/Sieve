@@ -22,7 +22,7 @@ import torch.nn.functional as F
 
 from decision_index.engines import Engine, Unsupported
 
-from .api import MAX_OPTIONS, to_record
+from .api import MAX_OPTIONS, choice_confidence, to_answers, to_record
 from .encode import TooLong, rows_of
 from .load import family_of, load_pointer
 
@@ -105,14 +105,16 @@ class SieveEngine(Engine):
         try:
             z = self._logits(text, qs, rec)
         except torch.cuda.OutOfMemoryError:
-            torch.cuda.empty_cache()
             z = None
+        if z is None:                   # retried outside the handler: its traceback holds the failed pass's tensors
+            torch.cuda.empty_cache()
             if len(qs) > 1:
                 try:
                     z = self._logits(text, qs, rec, one_at_a_time=True)
                 except torch.cuda.OutOfMemoryError:
-                    torch.cuda.empty_cache()
+                    pass
             if z is None:
+                torch.cuda.empty_cache()
                 raise RuntimeError(f"GPU out of memory at {len(rec['ids'])} tokens (retry on resume)")
         answers = {}
         temps = self.m.question_temperatures(meta, state) or [self.T] * len(meta)
@@ -120,10 +122,12 @@ class SieveEngine(Engine):
             p = F.softmax(zi.float() / t, -1).cpu().tolist()
             if mi["type"] == "noul":
                 answers[mi["id"]] = {"type": "noul", "noul": p[1]}
+            elif mi["type"] == "score":                     # levels in order (no score question in the Decision Index)
+                answers.update(to_answers([p], [mi], decimals=None))
             else:
                 keys = mi["keys"]
                 answers[mi["id"]] = {"type": "choice", "choice": keys[max(range(len(p)), key=p.__getitem__)],
-                                     "probabilities": dict(zip(keys, p))}
+                                     "confidence": choice_confidence(p), "probabilities": dict(zip(keys, p))}
         return {"model": self.provenance["model"], "answers": answers}, None
 
     def _logits(self, text, qs, rec, one_at_a_time=False):

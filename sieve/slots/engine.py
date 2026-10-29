@@ -18,6 +18,7 @@ Run:
       --option model=sthanika-ai/Sieve-31B --out runs/Sieve-31B
 """
 import json
+import threading
 
 import torch
 
@@ -26,7 +27,7 @@ try:
     from decider import temperature as TT
     from decider.infer import Decider
     from decider.prompt import MAX_OPTIONS, chat_template
-    from decider.systemone import assemble, unique_tokens
+    from decider.systemone import assemble, combine_isolated, unique_tokens
 except ImportError as e:
     raise ImportError("Sieve-31B builds its prompts with the decider-ai package; install it without its dependencies: "
                       "pip install --no-deps decider-ai==1.6.0") from e
@@ -36,12 +37,14 @@ try:
 except ImportError:                                  # the kit is only needed to run the Decision Index
     from .._kit import Engine, Unsupported
 
+from ..api import to_answers, to_record
 from .readout import make_readout
 
 BASE = "google/gemma-4-31B-it"
 BASE_REVISION = "842da3794eaa0b77d5f08bae87a17459d91ff475"
 TEMPERATURE = 8.5495
 ADAPTER = "sthanika-ai/Sieve-31B"
+_BUILD_LOCK = threading.Lock()       # guards the DI.DecisionModel swap in SlotsEngine.__init__
 
 
 class SlotsEngine(Engine):
@@ -58,12 +61,16 @@ class SlotsEngine(Engine):
             # split: per-GPU memory budget when one GPU is too small, e.g. '{"0": "40GiB", "1": "40GiB"}'
             raw = split if isinstance(split, dict) else json.loads(split)
             budget = {int(k): v for k, v in raw.items()}
-        original = DI.DecisionModel        # the orchestrator builds its model object by this name; ours is SlotReadout
-        DI.DecisionModel = make_readout(max_memory=budget, adapter=adapter, revision=revision)
-        try:
-            self.d = Decider(base, device=device, dtype=torch.bfloat16, temperature=float(temperature), use_graphs=False)
-        finally:
-            DI.DecisionModel = original
+        # The orchestrator builds its model object by the module-level name DI.DecisionModel; ours is SlotReadout. The
+        # name is shared, so one construction at a time swaps it (two concurrent loads would bind each other's weights).
+        with _BUILD_LOCK:
+            original = DI.DecisionModel
+            DI.DecisionModel = make_readout(max_memory=budget, adapter=adapter, revision=revision)
+            try:
+                self.d = Decider(base, device=device, dtype=torch.bfloat16, temperature=float(temperature),
+                                 use_graphs=False)
+            finally:
+                DI.DecisionModel = original
         self.d.layout = "chat"             # = decider.serve's DECIDER_LAYOUT=chat (the stock checkpoint has no decider_config)
         self.d.chat = chat_template(self.d.m.tok)
         self.max_tokens = int(max_tokens)
@@ -113,3 +120,19 @@ class SlotsEngine(Engine):
         resp = {"model": self.model_id, "answers": assemble(rqs, index, flatp),
                 "usage": {"input_tokens": unique_tokens(items), "output_tokens": 0}}
         return resp, {"T": float(self.d.T), "index": [list(x) for x in index], "row_probs": flatp}
+
+    def answers(self, state, questions, stats):
+        """The request's answers in sieve.api.to_answers' shape, from the unrounded row probabilities in the second
+        value __call__ returns (its decider answers round every probability to 4 decimals and the expected level to 2).
+        A score asked one level at a time ("iso" rows) is combined as decider combines it."""
+        _, _, meta = to_record(state, questions)
+        rows, by_id = stats["row_probs"], {}
+        for k, kind, first, n in stats["index"]:
+            p = combine_isolated([float(rows[first + j][1]) for j in range(n)])[0] if kind == "iso" else rows[first]
+            by_id[k] = [float(x) for x in p]
+        probs = []
+        for mi in meta:                                  # decider's option order = the question's (no, yes for noul)
+            p = by_id[mi["id"]][:len(mi["keys"])]
+            t = sum(p) or 1.0
+            probs.append([x / t for x in p])
+        return to_answers(probs, meta)

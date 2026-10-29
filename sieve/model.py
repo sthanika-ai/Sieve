@@ -101,6 +101,13 @@ class SieveModel(nn.Module):
         return {"n": Ls, "cache": out.past_key_values,
                 "last_hidden": out.last_hidden_state[0, -1].to(self.head_dtype)}
 
+    def whole_row(self, rec):
+        """True when logits() runs this request as one causal row (a single question at least RECOMPUTE_MIN_BRANCH
+        tokens long) and reads no prefix, so a cached state would go unused."""
+        _, _, rows = rows_of(rec)
+        return bool(self.RECOMPUTE_MIN_BRANCH and len(rows) == 1 and len(rows[0]["ids"]) >= self.RECOMPUTE_MIN_BRANCH
+                    and rec["n_state"] <= len(rows[0]["ids"]))
+
     @torch.no_grad()
     def logits(self, rec, prefix=None, temperature=None):
         """One logit vector per question. Questions continue from the (cached) state as a batch of causal rows.
@@ -109,11 +116,10 @@ class SieveModel(nn.Module):
         Ls = rec["n_state"]
         _, _, rows = rows_of(rec)
         tq = temperature if isinstance(temperature, (list, tuple)) else [temperature] * len(rows)
-        if (self.RECOMPUTE_MIN_BRANCH and len(rows) == 1 and len(rows[0]["ids"]) >= self.RECOMPUTE_MIN_BRANCH
-                and Ls <= len(rows[0]["ids"])):
+        if self.whole_row(rec):
             r = rows[0]
             ids = torch.tensor([rec["ids"][:Ls] + r["ids"]], device=self.device)
-            h = self.lm(input_ids=ids).last_hidden_state[0].to(self.head_dtype)
+            h = self.lm(input_ids=ids, use_cache=False).last_hidden_state[0].to(self.head_dtype)   # one pass, no cache to keep
             idx = torch.tensor([Ls + o for o in r["opts"]], device=self.device)
             return [self.head(h[Ls + r["decide"]], h[idx], tq[0])]
         if prefix is None:
@@ -159,7 +165,7 @@ class SieveModel(nn.Module):
             oidx[i, :k] = torch.tensor(r["opts"], device=self.device)
             omask[i, :k] = True
             didx[i] = r["decide"]
-        h = self.lm(input_ids=ids, attention_mask=att).last_hidden_state.to(self.head_dtype)
+        h = self.lm(input_ids=ids, attention_mask=att, use_cache=False).last_hidden_state.to(self.head_dtype)
         ar = torch.arange(B, device=self.device)
         z = (self.head.k(h[ar[:, None], oidx]) @ self.head.q(h[ar, didx]).unsqueeze(-1)).squeeze(-1) * self.head.scale
         return z.masked_fill(~omask, float("-inf")), omask

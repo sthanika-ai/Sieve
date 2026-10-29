@@ -3,10 +3,12 @@
     python -m sieve.serve --model sthanika-ai/Sieve-27B --graphs --port 8020
 
 POST /v1/decide  {"state": ..., "questions": {...}, "temperature": optional}  ->  typed answers with probabilities
-GET  /v1/models  loaded model, temperature, CUDA-graph and prefix-cache state
+GET  /v1/models  the loaded model and its design; for a pointer-head model also its temperatures, CUDA-graph and
+                 prefix-cache state
 
-Pointer-head models (Sieve-27B-v2, Sieve-27B, Sieve-9B-v2, Sieve-9B, Sieve-2B-v3) get the prefix cache and CUDA graphs. Every
-other model is answered through sieve.decide, with its temperature fixed at load time.
+Pointer-head models (Sieve-27B-v2, Sieve-27B, Sieve-9B-v2, Sieve-9B, Sieve-2B-v3) get the prefix cache and CUDA graphs
+(--graphs, --graph-tokens). Every other model is answered through sieve.decide, with its temperature fixed at load time;
+--base and --no-merge go to load_sieve.
 """
 import argparse
 import threading
@@ -17,7 +19,8 @@ import torch
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-from .api import to_answers, to_record
+from .api import to_answers, to_record, validate_questions
+from .load import check_temperature
 
 app = FastAPI(title="sieve")
 
@@ -48,17 +51,42 @@ class Server:
             self.cache.move_to_end(key)
             self.hits += 1
             return self.cache[key], True
-        pre = self.m.prefill_from_record(rec)
-        self.cache[key] = pre
-        while len(self.cache) > self.size:
+        while len(self.cache) >= self.size:            # make room before the new prefix is allocated
             self.cache.popitem(last=False)
+        while True:
+            try:
+                pre = self.m.prefill_from_record(rec)
+                break
+            except torch.OutOfMemoryError:
+                if not self.cache:                          # nothing left to release: the request itself does not fit
+                    raise
+            self.cache.popitem(last=False)                  # outside the handler, whose traceback holds the failed pass
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        self.cache[key] = pre
         self.misses += 1
         return pre, False
 
+    def _answer(self, rec, t, uncached=False):
+        """One attempt at a request: its state (cached or not), then every question. (probabilities, cache hit).
+        A single long question runs as one row and reads no state, so its state is not cached."""
+        if uncached or self.m.whole_row(rec):
+            pre, hit = None, False
+        else:
+            pre, hit = self.prefix_for(rec)
+        if self.graphed is not None:                    # it prefills an uncached state itself, only for a graph
+            logits = self.graphed.logits(rec, prefix=pre, temperature=t)
+        else:
+            logits = self.m.logits(rec, prefix=pre, temperature=t)
+        return [torch.softmax(z, -1).cpu() for z in logits], hit
+
     def decide(self, req: Request):
-        if req.temperature is not None and not req.temperature > 0:
-            raise HTTPException(422, "temperature must be > 0 (1.0 = raw logits; omit it for the calibrated default)")
         try:
+            check_temperature(req.temperature)
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        try:
+            validate_questions(req.questions)
             state, qs, meta = to_record(req.state, req.questions)
             rec = self.m.encode(state, qs)
         except ValueError as e:
@@ -68,14 +96,25 @@ class Server:
             if self.m.device == "cuda":
                 torch.cuda.synchronize()
             t0 = time.perf_counter()
-            pre, hit = self.prefix_for(rec)
-            if self.graphed is not None:
-                if pre is None:
-                    pre = self.m.prefill_from_record(rec)
-                logits = self.graphed.logits(rec, prefix=pre, temperature=t)
-            else:
-                logits = self.m.logits(rec, prefix=pre, temperature=t)
-            probs = [torch.softmax(z, -1).cpu() for z in logits]
+            key = tuple(rec["ids"][:rec["n_state"]])
+            uncached = False
+            while True:
+                try:
+                    probs, hit = self._answer(rec, t, uncached)
+                    break
+                except torch.OutOfMemoryError:
+                    if uncached:                            # nothing cached and still too large: it does not fit
+                        raise
+                # outside the handler, whose traceback held the failed attempt: give back the least recently used
+                # other state; when none is left, drop this request's own and try once more without caching it
+                others = [k for k in self.cache if k != key]
+                if others:
+                    self.cache.pop(others[0])
+                else:
+                    self.cache.pop(key, None)
+                    uncached = True
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
             if self.m.device == "cuda":
                 torch.cuda.synchronize()
             dt = (time.perf_counter() - t0) * 1000
@@ -85,7 +124,7 @@ class Server:
                 "latency_ms": round(dt, 1), "prefix_cache_hit": hit}
 
     def info(self):
-        return {"model": self.model_id, "base": self.base, "device": str(self.m.device),
+        return {"model": self.model_id, "design": "pointer", "base": self.base, "device": str(self.m.device),
                 "temperature": self.m.head.temperature,
                 "temperatures_by_category": (self.m.temperatures or {}).get("table"),
                 "cuda_graphs": None if self.graphed is None else {"captured": len(self.graphed.graphs),
@@ -148,7 +187,9 @@ def main():
     from .load import family_of, load_pointer, load_sieve
     family = family_of(a.model)
     if family != "pointer":
-        app.state.server = AnyServer(load_sieve(a.model), a.model, family)
+        if a.graphs or a.graph_tokens:
+            print(f"--graphs / --graph-tokens apply to pointer-head models only; ignored for {a.model} ({family})", flush=True)
+        app.state.server = AnyServer(load_sieve(a.model, base=a.base, merge=not a.no_merge), a.model, family)
         print(f"serving {a.model} ({family}) on {a.host}:{a.port}", flush=True)
         import uvicorn
         uvicorn.run(app, host=a.host, port=a.port)

@@ -39,10 +39,11 @@ class Engine:
     def count_tokens(self, text: str) -> int:
         return len(self.model.tokenizer.encode(text, add_special_tokens=False))
 
-    def evaluate(self, req: SystemOneRequest) -> tuple[dict, dict]:
+    def precheck(self, req: SystemOneRequest):
+        """Everything evaluate refuses before the model runs (option / level counts, token limits), with no GPU work:
+        raises ContractError, else returns (questions, encoded request, state tokens, tokens per question)."""
         check_limits(req)
-        qids = list(req.questions)
-        qs = [req.questions[k].model_dump() for k in qids]
+        qs = [req.questions[k].model_dump() for k in req.questions]
         enc = self.model.prompts.encode(req.state, qs, noul_both_orders=self.noul_both_orders)
         # token limits: the preamble sits outside them; state counted once; each question once
         state_tokens = len(enc.prefix_ids) - self.preamble_tokens
@@ -52,6 +53,11 @@ class Engine:
         err = token_limit_error(state_tokens + max(per_q), state_tokens + sum(per_q))
         if err is not None:
             raise err
+        return qs, enc, state_tokens, per_q
+
+    def evaluate(self, req: SystemOneRequest) -> tuple[dict, dict]:
+        qids = list(req.questions)
+        qs, enc, state_tokens, per_q = self.precheck(req)
         t0 = time.perf_counter()
         with self.lock:
             logits = self._logits(enc)

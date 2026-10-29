@@ -28,7 +28,25 @@ def load(repo_or_path: str = "sthanika-ai/Sieve-4B", device: str = "cuda:0", nam
     return Engine(model, model_name=name, **engine_kw)
 
 
+def as_content(state, questions):
+    """(state, questions) with every bare number or bool (the state, an instructions, a description, a level) as its
+    text, str(x) as sieve.api.render writes it: the request schema takes only text, objects and lists."""
+    from ..api import render
+    c = lambda x: render(x) if isinstance(x, (bool, int, float)) else x
+    out = {}
+    for k, q in questions.items():
+        q = {**q, **({"instructions": c(q["instructions"])} if "instructions" in q else {})}   # absent stays absent
+        crit = q.get("criteria")
+        if isinstance(crit, dict):
+            q["criteria"] = {ck: c(cv) for ck, cv in crit.items()}
+        elif isinstance(crit, list):
+            q["criteria"] = [c(x) for x in crit]
+        out[k] = q
+    return c(state), out
+
+
 def decide(engine, state, questions: dict, model: str = "sieve-4b") -> dict:
     from .contract import SystemOneRequest
+    state, questions = as_content(state, questions)
     body, _ = engine.evaluate(SystemOneRequest(state=state, model=model, questions=questions))
     return body

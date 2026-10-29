@@ -21,13 +21,14 @@ try:
 except ImportError:                                  # the kit is only needed to run the Decision Index
     from .._kit import Engine, Unsupported, text
 
+from ..api import choice_confidence
 from .model import Sieve, choice_prefix, listed_question
 
 
 class ForkEngine(Engine):
     name = "sieve"
 
-    def __init__(self, model="", sieve_dir="", repo_id="", device=None, dtype="bfloat16", schema=None, **options):
+    def __init__(self, model="", sieve_dir="", repo_id="", device=None, dtype="bfloat16", **options):
         super().__init__(**options)
         path = model or repo_id or sieve_dir
         assert path, "pass --option model=<Hub repo or local folder>"
@@ -41,7 +42,6 @@ class ForkEngine(Engine):
             sieve_dir = path
         self.model = Sieve.from_pretrained(sieve_dir, device=device, dtype=getattr(torch, dtype))
         self.name = f"sieve-{path.rstrip('/').rsplit('/', 1)[-1]}"
-        self.schema = schema
         frac = float(options.get("mem_fraction", 0))
         if frac and self.model.device != "cpu":
             # parallel shards share a GPU (with each other and other users' jobs): cap each so one
@@ -59,7 +59,6 @@ class ForkEngine(Engine):
             "list_options": self.model.list_options,
             "built_in_temperature": self.model.T,
             "context_limit_tokens": self.model.max_len,
-            "schema_calibration": schema,
             "policy": "Order-invariant prefix-fork Choice decision on a Qwen3.5 hybrid backbone "
                       "(Gated DeltaNet + attention); every option is scored as an isolated "
                       "continuation of one shared, cached [state][question] prefix, so shuffling "
@@ -70,6 +69,13 @@ class ForkEngine(Engine):
 
     def _option_texts(self, keys, criteria):
         return [key if criteria.get(key) in (None, "") else text(criteria[key]) for key in keys]
+
+    @staticmethod
+    def _noul_texts(criteria):
+        """No / yes option texts: each side's description, else "No." / "Yes." (also for a side left empty)."""
+        c = criteria or {}
+        return ["No." if c.get("false") in (None, "") else text(c["false"]),
+                "Yes." if c.get("true") in (None, "") else text(c["true"])]
 
     def _would_truncate(self, state_str, question, options):
         """Mirrors Sieve._trim's own overflow check exactly, so we refuse before it ever
@@ -90,7 +96,7 @@ class ForkEngine(Engine):
             elif q["type"] == "noul":
                 keys = ["false", "true"]
                 crit = q.get("criteria") or {}
-                texts = self._option_texts(keys, crit) if crit else ["No.", "Yes."]
+                texts = self._noul_texts(crit)
             else:
                 raise Unsupported("Unsupported question type " + str(q["type"]))
             if len(set(texts)) != len(texts):
@@ -208,7 +214,8 @@ class ForkEngine(Engine):
             for (k, qtype, keys, texts, instr), p in zip(prepared, self._batched_probs(state_str, prepared)):
                 probs_by_key = {key: float(x) for key, x in zip(keys, p)}
                 if qtype == "choice":
-                    answers[k] = {"type": "choice", "choice": keys[int(p.argmax())], "probabilities": probs_by_key}
+                    answers[k] = {"type": "choice", "choice": keys[int(p.argmax())],
+                                  "confidence": choice_confidence(list(probs_by_key.values())), "probabilities": probs_by_key}
                 else:
                     answers[k] = {"type": "noul", "noul": probs_by_key["true"]}
             return {"model": self.name, "answers": answers}, None
@@ -221,7 +228,7 @@ class ForkEngine(Engine):
             elif q["type"] == "noul":
                 keys = ["false", "true"]
                 crit = q.get("criteria") or {}
-                texts = self._option_texts(keys, crit) if crit else ["No.", "Yes."]
+                texts = self._noul_texts(crit)
             else:
                 raise Unsupported("Unsupported question type " + str(q["type"]))
 
@@ -233,13 +240,14 @@ class ForkEngine(Engine):
                 raise Unsupported(f"question {k!r}: state+question+option exceeds Sieve's "
                                    f"{self.model.max_len}-token context limit")
 
-            out = self.model.choice(state_str, instr, texts, schema=self.schema)
+            out = self.model.choice(state_str, instr, texts)
             # Sieve.choice's "decision"/"probs" are keyed by option TEXT, not our criteria key --
             # map back positionally (texts and keys share the same order by construction).
             probs_by_key = dict(zip(keys, out["probs"].values()))
             chosen_key = keys[out["index"]]
             if q["type"] == "choice":
-                answers[k] = {"type": "choice", "choice": chosen_key, "probabilities": probs_by_key}
+                answers[k] = {"type": "choice", "choice": chosen_key,
+                              "confidence": choice_confidence(list(probs_by_key.values())), "probabilities": probs_by_key}
             else:
                 answers[k] = {"type": "noul", "noul": probs_by_key["true"]}
         return {"model": self.name, "answers": answers}, None

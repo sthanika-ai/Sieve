@@ -3,9 +3,11 @@
     python -m decision_index run --engine sieve.decision_index_engine:SieveEngine \
         --option model=sthanika-ai/Sieve-4B --out runs/Sieve-4B
 
-Each request is answered exactly as `python -m sieve.codes.server` answers it over HTTP (bf16, adapter merged, both
-yes/no orders, four decimals): the response is the server's /v1/systemone body. A request the server refuses for its
-size (too many options or levels, too many tokens) is Unsupported; any other failure is an error, retried on resume.
+Each request is computed as `python -m sieve.codes.server` computes it (bf16, adapter merged, both yes/no orders) and
+answered in its /v1/systemone body, at full precision as every Sieve engine answers the kit, so the reported
+probabilities always agree with the choice. `--option decimals=4` gives the rounding of the published Sieve-4B run
+(4 decimals summing to one, the remainder on one option). A request the server refuses for its size (too many options or
+levels, too many tokens) is Unsupported; any other failure is an error, retried on resume.
 """
 import hashlib
 import os
@@ -28,12 +30,13 @@ class CodesEngine(Engine):
                "excludes model loading.")
 
     def __init__(self, model="sthanika-ai/Sieve-4B", device="cuda:0", served_name="sieve-4b", prefix_cache_gb=1.0,
-                 max_batch_tokens=65536, decimals=4, **options):
+                 max_batch_tokens=65536, decimals=None, **options):
         super().__init__(model=model, device=device, served_name=served_name, prefix_cache_gb=prefix_cache_gb,
                          max_batch_tokens=max_batch_tokens, decimals=decimals, **options)
         self.served_name = served_name
         self.engine = load(model, device=device, name=served_name, prefix_cache_gb=float(prefix_cache_gb),
-                           max_batch_tokens=int(max_batch_tokens), decimals=int(decimals))
+                           max_batch_tokens=int(max_batch_tokens),
+                           decimals=None if decimals in (None, "", "None", "none") else int(decimals))
         m = self.engine.model
         self.provenance = {"model": os.path.basename(str(model).rstrip("/")), "source": model, "base_model": m.cfg.base,
                            "base_revision": m.cfg.revision, "temperatures": m.temperatures,

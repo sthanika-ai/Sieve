@@ -74,3 +74,53 @@ def test_bidir_global_on_a_tiny_gemma(tiny):
     assert not torch.allclose(both[0], causal[0], atol=1e-4)             # the global layers now look ahead
     assert torch.allclose(alone[0], both[1, :13], atol=1e-4, rtol=1e-4)  # padding never leaks into the real tokens
     assert torch.allclose(first[0], both[0], atol=1e-4, rtol=1e-4)       # rows of a batch stay independent
+
+
+def test_slot_logits_keeps_no_attention_cache():
+    import types
+    from sieve.slots.readout import SlotReadout
+    seen = {}
+
+    def backbone(**kw):
+        seen.update(kw)
+        return types.SimpleNamespace(last_hidden_state=torch.zeros(1, 4, 8))
+    r = SlotReadout.__new__(SlotReadout)
+    torch.nn.Module.__init__(r)
+    emb = torch.nn.Embedding(10, 8)
+    r.lm = types.SimpleNamespace(model=backbone, get_input_embeddings=lambda: emb, lm_head=torch.nn.Linear(8, 10))
+    r.attention, r.letters = "causal", torch.zeros(255, dtype=torch.long)     # one label row per option slot
+    r.slot_logits(torch.zeros(1, 4, dtype=torch.long), torch.ones(1, 4, dtype=torch.long), torch.tensor([3]),
+                  torch.tensor([0]), torch.tensor([2]))
+    assert seen["use_cache"] is False
+
+
+def test_concurrent_loads_build_their_own_readout(monkeypatch):
+    import concurrent.futures
+    import time
+    import types
+    import sieve.slots.engine as se
+    names = ("a/Sieve-31B", "a/Sieve-31B-v2")
+
+    def factory(**kw):
+        return type("Readout", (), {"adapter": kw["adapter"], "full_release": False, "attention": "causal", "tok": None})
+
+    def decider(*args, **kw):                   # reads the shared name twice, with another load starting in between
+        first = se.DI.DecisionModel.adapter
+        time.sleep(0.3)
+        return types.SimpleNamespace(m=se.DI.DecisionModel(), seen=(first, se.DI.DecisionModel.adapter))
+    monkeypatch.setattr(se, "DI", types.SimpleNamespace(DecisionModel=None))     # its own stub, whatever ran before
+    monkeypatch.setattr(se, "make_readout", factory)
+    monkeypatch.setattr(se, "Decider", decider)
+    monkeypatch.setattr(se, "chat_template", lambda tok: None)
+
+    def load(name):
+        e = se.SlotsEngine(model=name, device="cpu")
+        return name, (e.model_id, e.d.m.adapter, *e.d.seen)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        futures = []
+        for n in names:
+            futures.append(pool.submit(load, n))
+            time.sleep(0.1)
+        seen = dict(f.result() for f in futures)               # .result() raises a load's own error here
+    assert set(seen) == set(names)                              # both loads completed
+    assert all(v == (k, k, k, k) for k, v in seen.items()), seen

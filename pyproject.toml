@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sieve-decisions"
-version = "0.4.0"
+version = "0.4.4"
 description = "Typed decisions with calibrated probabilities in a single forward pass."
 readme = "README.md"
 license = "Apache-2.0"
@@ -21,10 +21,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-cuda = ["flash-linear-attention>=0.5"]
+cuda = ["flash-linear-attention==0.5.2"]     # 0.6 does not import with the Triton of torch 2.8
 serve = ["fastapi", "uvicorn"]
 slots = ["accelerate", "jinja2"]
-test = ["pytest>=8"]
+calibrate = ["scikit-learn"]
+test = ["pytest>=8", "fastapi", "httpx"]     # the server tests use FastAPI's test client
 
 [project.scripts]
 sieve-serve = "sieve.serve:main"

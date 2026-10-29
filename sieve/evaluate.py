@@ -13,7 +13,7 @@ from collections import OrderedDict, defaultdict
 import numpy as np
 import torch
 
-from .api import question_keys, to_record
+from .api import question_keys, to_record, validate_questions
 from .calibration import categories
 from .encode import TooLong, encode, rows_of
 
@@ -21,12 +21,28 @@ BINS = 15
 
 
 def gold_index(q):
+    """The gold option's index; ValueError (the question is skipped) for a label that is not one of the question's:
+    choice, one of its keys; noul, true / false (also "true" / "false", 1 / 0); score, a level index 0..L-1 (an int,
+    or a whole number written as 2.0 or "2")."""
     keys = question_keys(q["type"], q.get("criteria"))
+    label = q["label"]
     if q["type"] == "choice":
-        return keys.index(q["label"])
+        return keys.index(label)
     if q["type"] == "noul":
-        return 1 if q["label"] in (True, "true", 1) else 0
-    return int(q["label"])
+        for i, names in enumerate(((False, "false"), (True, "true"))):
+            if label in names and not (isinstance(label, (int, float)) and not isinstance(label, bool) and label != i):
+                return i
+        raise ValueError(f"noul label {label!r} is not true or false")
+    i = None                                        # a level index: an int, or a whole number written as 2.0 or "2"
+    if isinstance(label, int) and not isinstance(label, bool):
+        i = label
+    elif isinstance(label, float) and label.is_integer():
+        i = int(label)
+    elif isinstance(label, str) and label.strip().isdigit():
+        i = int(label)
+    if i is None or not 0 <= i < len(keys):
+        raise ValueError(f"score label {label!r} is not a level index 0..{len(keys) - 1}")
+    return i
 
 
 def probs(z, t):
@@ -65,16 +81,40 @@ def accuracy_ci(rows, n=4000, seed=0):
     return [float(np.quantile(d, 0.025)), float(np.quantile(d, 0.975))]
 
 
+def _scalar(v):
+    return v is None or isinstance(v, (str, int, float))
+
+
 def items(records, tok, max_state, max_branch, truncate_state):
     out, skipped = [], defaultdict(int)
     for i, r in enumerate(records):
-        meta = r.get("_meta") or {}
-        group = meta.get("group_id") or meta.get("id") or f"rec{i}"
+        if not isinstance(r, dict) or not isinstance(r.get("questions"), dict):
+            skipped["invalid record: not an object with a questions object"] += 1
+            continue
+        meta = r.get("_meta") if isinstance(r.get("_meta"), dict) else {}
+        if not (_scalar(meta.get("group_id")) and _scalar(meta.get("id"))):
+            skipped["invalid record: _meta group_id or id is not text or a number"] += 1
+            continue
+        # the bootstrap's group: a supplied group_id, else the record's id (0 counts), else the record alone, in a
+        # namespace of its own so that it never joins a supplied group of the same name
+        if meta.get("group_id") is not None:
+            group = ("supplied", meta["group_id"])
+        elif meta.get("id") is not None:
+            group = ("supplied", meta["id"])
+        else:
+            group = ("record", i)
         for qid, q in r["questions"].items():
+            if not isinstance(q, dict):
+                skipped["invalid question: not an object"] += 1
+                continue
             if "label" not in q:
                 skipped["no label"] += 1
                 continue
+            if not _scalar(q.get("src")):
+                skipped["invalid question: src is not text or a number"] += 1
+                continue
             try:
+                validate_questions({qid: q})            # the input rules the models are served by
                 text, qs, _ = to_record(r["state"], {qid: q})
                 label = gold_index(q)
                 rec = encode(tok, text, qs, max_state=max_state, max_branch=max_branch, truncate_state=truncate_state)
@@ -86,7 +126,8 @@ def items(records, tok, max_state, max_branch, truncate_state):
                 continue
             state_ids, _, (row,) = rows_of(rec)
             Ls = len(state_ids)
-            out.append({"record": meta.get("id", i), "question": qid, "group": group, "src": q.get("src"),
+            out.append({"record": meta.get("id", i), "question": qid, "group": group,
+                        "src": None if q.get("src") is None else str(q["src"]),
                         "type": q["type"], "label": label, "k": len(row["opts"]),
                         "cats": categories(q["type"], len(row["opts"]), r["state"]),
                         "ids": state_ids + row["ids"], "opts": [Ls + o for o in row["opts"]], "decide": Ls + row["decide"]})
