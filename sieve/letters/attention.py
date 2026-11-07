@@ -111,7 +111,10 @@ def sdpa_sieve(module, query, key, value, attention_mask, dropout=0.0, scaling=N
             cap["kv"][module] = (key, value)
     pre = getattr(module, "sieve_prefix", None)     # a branch pass: the state's keys / values come first
     if pre is not None:
-        key, value = torch.cat([pre[0], key], 2), torch.cat([pre[1], value], 2)
+        pk, pv = pre
+        if pk.shape[0] != key.shape[0]:               # one state for a batch of rows (Qwen3.5): a view, copied below
+            pk, pv = pk.expand(key.shape[0], -1, -1, -1), pv.expand(key.shape[0], -1, -1, -1)
+        key, value = torch.cat([pk, key], 2), torch.cat([pv, value], 2)
     n = getattr(module, "num_key_value_groups", 1)
     key, value = repeat_kv(key, n).contiguous(), repeat_kv(value, n).contiguous()
     if isinstance(attention_mask, SegMask):

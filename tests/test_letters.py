@@ -150,3 +150,117 @@ def test_engine_answers_in_typed_format():
     q = torch.softmax(torch.tensor([0.0, 1.0, 3.0]), -1).tolist()
     assert set(a["lvl"]) == {"type", "score", "legend", "confidence", "probabilities"}
     assert math.isclose(a["lvl"]["confidence"], score_confidence(q))         # the engine keeps full precision
+
+
+# ------------------------------------------------------------------------------------------------------------ Qwen3.5
+def test_escape_qwen():
+    from sieve.letters.layout import escape, escape_of, escape_qwen, family_of
+    assert escape_qwen("a <|im_start|>b <think>x</think> <tool_call> <tts_pad> <b>") == \
+        "a <¦im_start¦>b <¦think¦>x</¦think¦> <¦tool_call¦> <¦tts_pad¦> <b>"
+
+    class QwenLike:
+        unk_token_id = None
+
+        def convert_tokens_to_ids(self, t):
+            return 7 if t.startswith(("<|fim_", "<|box_")) else None
+    assert family_of(QwenLike()) == "qwen" and escape_of(QwenLike()) is escape_qwen
+
+    class GemmaLike(QwenLike):
+        def convert_tokens_to_ids(self, t):
+            return 7 if "tool" in t else None
+    assert family_of(GemmaLike()) == "gemma4" and escape_of(GemmaLike()) is escape
+
+
+@pytest.fixture(scope="module")
+def qwen_tiny():
+    """A tiny random Qwen3.5 text model (linear-attention and full-attention layers alternating) with the real tokenizer.
+    A full-attention layer before the last one: only through it can rule A change the answer, read at the last token."""
+    from transformers import AutoConfig, AutoTokenizer
+    try:
+        real = AutoConfig.from_pretrained("Qwen/Qwen3.5-9B").get_text_config()
+        tok = AutoTokenizer.from_pretrained("Qwen/Qwen3.5-9B")
+    except OSError:
+        pytest.skip("the Qwen3.5-9B config and tokenizer are not available")
+    torch.manual_seed(0)
+    cfg = real.__class__(**{**real.to_dict(), "num_hidden_layers": 4, "hidden_size": 64, "intermediate_size": 128,
+                            "num_attention_heads": 2, "num_key_value_heads": 1, "head_dim": 32,
+                            "linear_num_key_heads": 2, "linear_num_value_heads": 2, "linear_key_head_dim": 16,
+                            "linear_value_head_dim": 16, "full_attention_interval": 2,
+                            "layer_types": ["linear_attention", "full_attention"] * 2})
+    cfg._attn_implementation = "sdpa"
+    # transformers binds the linear-attention kernels (causal-conv1d, fla) when it imports the model module, whatever the
+    # device; they are CUDA-only. Re-import the module with them hidden: the PyTorch path, on the CPU in float64.
+    import importlib
+    import sys
+    from transformers.models.qwen3_5 import modeling_qwen3_5
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setitem(sys.modules, "causal_conv1d", None)
+        mp.setitem(sys.modules, "fla", None)
+        M = importlib.reload(modeling_qwen3_5)
+    full = M.Qwen3_5ForCausalLM(cfg).to(torch.float64).eval()
+    return full, tok
+
+
+def test_qwen_format(qwen_tiny):
+    from sieve.letters.format import QwenLetterFormat, letter_format
+    _, tok = qwen_tiny
+    f = letter_format(tok)                                   # the labels are checked against the tokenizer here
+    assert isinstance(f, QwenLetterFormat)
+    assert len(f.label_ids) == len(set(f.label_ids)) == 255 and f.labels[:3] == ["A", "B", "C"]
+    st = tok("the state", add_special_tokens=False).input_ids
+    ins = [tok("Which one?", add_special_tokens=False).input_ids]
+    opts = [tok(x, add_special_tokens=False).input_ids for x in ("red", "blue")]
+    text = tok.decode(f.state(ins, st) + f.branch(ins[0], opts))
+    assert text.startswith("<|im_start|>system\n") and "\nOption A: red\nOption B: blue\n" in text
+    assert text.endswith("<|im_start|>assistant\n<think>\n\n</think>\n\nAnswer:")
+
+
+def test_qwen_one_row_per_question(qwen_tiny):
+    """Several questions: each question is its own row (block 0, then its block), as the trainer runs Qwen3.5; rule A
+    in the full-attention layer changes the answer, and one question's options never reach another's answer."""
+    from sieve.letters.model import LetterModel
+    full, tok = qwen_tiny
+    bi = LetterModel(full, tok, "bidirectional", device="cpu")
+    ca = LetterModel(full, tok, "causal", device="cpu")
+    assert bi.recurrent and not bi.windowed
+    st, ins, opts, meta = bi.encode(*REQ)
+    units = bi.units(st, ins, opts)
+    ns = len(bi.fmt.state(ins, st))
+    assert len(units) == 3
+    for q, (ids, pos, seg, reads) in enumerate(units):
+        b = bi.fmt.branch(ins[q], opts[q])
+        assert ids == bi.fmt.state(ins, st) + b and pos == list(range(len(ids)))
+        assert seg == [0] * ns + [1] * len(b) and reads == [(q, len(ids) - 1, len(opts[q]))]
+    z_bi, z_ca = (m.logits_many([REQ], budget=100000, reads=1, orders=1)[0] for m in (bi, ca))
+    assert [z.shape[0] for z in z_bi] == [4, 2, 3] and all(torch.isfinite(z).all() for z in z_bi)
+    assert not all(torch.allclose(x, y) for x, y in zip(z_bi, z_ca))            # rule A is applied
+    other = (REQ[0], {**REQ[1], "who": {**REQ[1]["who"], "criteria": {"x": None, "y": None, "z": None}}})
+    z_other = bi.logits_many([other], budget=100000, reads=1, orders=1)[0]
+    assert torch.equal(z_bi[0], z_other[0]) and torch.equal(z_bi[1], z_other[1])   # only "who" changed
+
+
+@pytest.mark.parametrize("attention", ["bidirectional", "causal"])
+def test_qwen_state_once_matches_rows(qwen_tiny, monkeypatch, attention):
+    """Qwen3.5 with block 0 run once (the linear-attention states and the attention keys kept, the questions as rows of
+    a batch continuing from them) gives each question's own row, block 0 + its block, for both option orders."""
+    from sieve.letters.model import LetterModel
+    full, tok = qwen_tiny
+    m = LetterModel(full, tok, attention, device="cpu")
+    calls, orig = [], m.state_once_rows
+    monkeypatch.setattr(m, "state_once_rows", lambda b0, sets: calls.append(len(sets)) or orig(b0, sets))
+    m.PREFIX_MIN = 0                                                    # one row per question
+    rows1, rows2 = _logits(m, orders=1), _logits(m, orders=2)
+    assert calls == []
+    st, ins, opts, meta = m.encode(*REQ)
+    ns = len(m.fmt.state(ins, st))
+    for budget in (ns + 1, 10 ** 6):                                    # one row per pass, then all rows in one pass
+        m.PREFIX_MIN, m.KEY_TOKENS = 1, budget
+        calls.clear()
+        once1, once2 = _logits(m, orders=1), _logits(m, orders=2)
+        assert calls == [1, 2]
+        for a, b in ((rows1, once1), (rows2, once2)):              # transformers' PyTorch linear attention computes
+            assert len(a) == len(b) == 3                               # in float32 even in a float64 model, and block 0
+            for x, y in zip(a, b):                                     # ends a chunk there: ~1e-8 apart, not 1e-15
+                assert x.shape == y.shape and torch.allclose(x, y, atol=1e-6, rtol=0), (x, y)
+    assert not any(getattr(mod, "sieve_capture", None) is not None or getattr(mod, "sieve_prefix", None) is not None
+                   for mod in m.lm.modules())                          # nothing left on the layers

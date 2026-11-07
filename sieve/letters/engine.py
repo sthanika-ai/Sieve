@@ -1,4 +1,4 @@
-"""A letter-readout release (Sieve-31B-v3) as an engine for the Decision Index kit (github.com/apolinario/decision-index).
+"""A letter-readout release (Gemma 4 or Qwen3.5) as an engine for the Decision Index kit (github.com/apolinario/decision-index).
 sieve.decision_index_engine:SieveEngine hands a letter-readout model to this engine:
 
     python -m decision_index run --engine sieve.decision_index_engine:SieveEngine --option model=<release> --out runs/x

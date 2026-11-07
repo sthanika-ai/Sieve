@@ -1,5 +1,6 @@
-"""Serving engine of a letter-readout model (Sieve-31B-v3): the model's own LM-head logits of the option labels at
-"Answer: (" (final logit softcap included), over sieve.letters' renderer, the one the trainer uses.
+"""Serving engine of a letter-readout model (Gemma 4, e.g. Sieve-31B-v3, or Qwen3.5): the model's own LM-head logits of
+the option labels at the answer slot ("Answer: (" on Gemma 4, final logit softcap included; "Answer:" on Qwen3.5), over
+sieve.letters' renderer, the one the trainer uses.
 
 Attention rule A, in the global layers of a bidirectional model (sliding-window layers stay causal in every case):
   - a request with one question is one block from <bos> to the answer slot: its state reads its question and options;
@@ -8,6 +9,10 @@ Attention rule A, in the global layers of a bidirectional model (sliding-window 
     questions are packed after one copy of block 0 (positions restart after it), exactly as the trainer's packs.
 Single or multi follows the request's own question count. The same code serves a causal model (attention "causal",
 e.g. the untuned base, the proxy reference), where the packs compute what each question's own row would.
+Qwen3.5 (Gated DeltaNet linear-attention layers and full-attention layers): a linear-attention layer's state cannot be
+shared through a mask, so with several questions each question is its own row, block 0 followed by its block, as the
+trainer runs it; in the full-attention layers rule A holds within the row, and the linear-attention layers are causal.
+A long block 0 runs once instead (state_once_rows): the rows continue from its kept states.
 
 Loads a release folder (save_pretrained + head.pt with readout "letters"), a trainer weight snapshot (snapshot.json +
 backbone shards, on top of its base) or a base model; averages and blends of snapshots are built in memory (mix).
@@ -26,7 +31,7 @@ import torch
 from ..api import to_record
 from ..calibration import question_temperatures
 from .attention import mark_attention, seg_masks
-from .format import LetterFormat
+from .format import letter_format
 from .layout import escape_of
 
 
@@ -118,23 +123,29 @@ class LetterModel:
     # never reads a branch, a branch reads block 0 and itself), without block 0 again in every pack and every order.
     PREFIX_MIN = int(os.environ.get("SIEVE_LETTERS_PREFIX_MIN", "2048"))
     BRANCH_TOKENS = int(os.environ.get("SIEVE_LETTERS_BRANCH_TOKENS", "32768"))
+    # Qwen3.5 runs the branches after block 0 as rows of a batch; in the attention layers each row reads its own copy of
+    # block 0's keys / values (made one layer at a time), so a pass holds at most KEY_TOKENS rows x (block 0 + branch).
+    KEY_TOKENS = int(os.environ.get("SIEVE_LETTERS_KEY_TOKENS", "262144"))
 
     def __init__(self, full, tok, attention, meta=None, device="cuda", max_tokens=None, pack_tokens=None):
         self.full, self.tok, self.device = full, tok, device
         self.lm = _backbone(full)
         self.lm.eval()
         cfg = getattr(full.config, "text_config", full.config)
-        self.fmt = LetterFormat(tok)
+        self.fmt = letter_format(tok)                   # Gemma 4 or Qwen3.5 layout (labels checked)
         self.esc = escape_of(tok)
-        self.windowed = "sliding_attention" in set(getattr(cfg, "layer_types", None) or [])
+        types = set(getattr(cfg, "layer_types", None) or [])
+        self.windowed = "sliding_attention" in types
+        self.recurrent = "linear_attention" in types     # Qwen3.5: rows per question, never packed
         self.window = cfg.sliding_window if self.windowed else None
-        if self.windowed:
+        if self.windowed or self.recurrent:             # unmasked passes keep transformers' own attention
             mark_attention(self.lm)
         chunk_mlps(self.lm)
         if attention not in ("bidirectional", "causal"):
             raise ValueError(f"attention must be 'bidirectional' or 'causal', got {attention!r}")
-        if attention == "bidirectional" and not self.windowed:
-            raise ValueError("bidirectional global attention is implemented for sliding-window backbones (Gemma 4) only")
+        if attention == "bidirectional" and not (self.windowed or self.recurrent):
+            raise ValueError("bidirectional global attention is implemented for Gemma 4 (sliding window) and Qwen3.5 "
+                             "(linear attention + full attention) backbones only")
         self.bidir = attention == "bidirectional"
         self.softcap = float(getattr(cfg, "final_logit_softcapping", 0.0) or 0.0)
         W = full.get_output_embeddings().weight
@@ -218,6 +229,12 @@ class LetterModel:
         if Q == 1:
             ids = block0 + branches[0]
             return [(ids, list(range(len(ids))), [0] * len(ids), [(0, len(ids) - 1, len(opts[0]))])]
+        if self.recurrent:                                  # a linear-attention state cannot be shared through a mask: one
+            out, ns = [], len(block0)                       # row per question, block 0 (seg 0) + its block (seg 1)
+            for q, b in enumerate(branches):
+                ids = block0 + b
+                out.append((ids, list(range(len(ids))), [0] * ns + [1] * len(b), [(q, len(ids) - 1, len(opts[q]))]))
+            return out
         ns = len(block0)
         lim = max(self.pack_tokens, ns + max(len(b) for b in branches))
         out, cur = [], None
@@ -246,8 +263,8 @@ class LetterModel:
             n = len(i)
             ids[b, :n] = torch.tensor(i); pos[b, :n] = torch.tensor(p); seg[b, :n] = torch.tensor(s)
         ids, pos, seg = ids.to(self.device), pos.to(self.device), seg.to(self.device)
-        h = self.lm(input_ids=ids, position_ids=pos, attention_mask=seg_masks(seg, pos, self.window, self.bidir),
-                    use_cache=False).last_hidden_state
+        masks = self._masks(seg, pos) if (self.bidir or not self.recurrent) else None   # a causal Qwen row: no mask
+        h = self.lm(input_ids=ids, position_ids=pos, attention_mask=masks, use_cache=False).last_hidden_state
         return [[(q, self.label_logits(h[b, p], K).cpu()) for q, p, K in u[3]] for b, u in enumerate(units)]
 
     def check_length(self, units):
@@ -257,9 +274,79 @@ class LetterModel:
 
     def uses_state_once(self, n_state, n_questions, reads, short):
         """True for the requests state_once serves: several questions, block 0 of at least PREFIX_MIN tokens, a
-        sliding-window backbone (its attention layers are marked), and not read twice."""
-        return (self.windowed and n_questions > 1 and n_state >= self.PREFIX_MIN and self.PREFIX_MIN > 0
-                and not (reads == 2 and short))
+        sliding-window (Gemma 4) or linear-attention (Qwen3.5) backbone, and not read twice."""
+        return ((self.windowed or self.recurrent) and n_questions > 1 and n_state >= self.PREFIX_MIN
+                and self.PREFIX_MIN > 0 and not (reads == 2 and short))
+
+    def _masks(self, seg, pos, **keys):
+        """seg_masks for this backbone: Qwen3.5's linear-attention layers take no mask (causal; right padding only)."""
+        m = seg_masks(seg, pos, self.window, self.bidir, **keys)
+        return {"full_attention": m["full_attention"], "linear_attention": None} if self.recurrent else m
+
+    @torch.no_grad()
+    def state_once_rows(self, block0, branch_sets):
+        """state_once on Qwen3.5: one pass over block 0 keeps the linear-attention layers' recurrent and convolution
+        states after it (transformers' cache) and the attention layers' keys / values (sdpa_sieve); the branches then
+        run as the rows of a batch, each continuing from them, positions after block 0. Under rule A block 0 never reads
+        a branch, so each row computes what the question's own row (block 0 + its block) computes, without block 0."""
+        from transformers import DynamicCache
+        dev, ns = self.device, len(block0)
+        cfg = getattr(self.full.config, "text_config", self.full.config)
+        marked = [m for m in self.lm.modules() if getattr(m, "sieve_attention", False)]
+        cap = {"kv": {}, "sliding_keys": 0}
+        pos = torch.arange(ns, device=dev)[None]
+        cache = DynamicCache(config=cfg)
+        for m in marked:
+            m.sieve_capture = cap
+        try:
+            self.lm(input_ids=torch.tensor([block0], device=dev), position_ids=pos,
+                    attention_mask=self._masks(torch.zeros_like(pos), pos), past_key_values=cache, use_cache=True)
+        finally:
+            for m in marked:
+                m.sieve_capture = None
+        linear = [i for i, t in enumerate(cfg.layer_types) if t == "linear_attention"]
+        states = {i: (cache.layers[i].conv_states[0], cache.layers[i].recurrent_states[0]) for i in linear}
+        del cache                                       # block 0's attention keys / values live on in cap
+        out = {k: {} for k, _ in branch_sets}
+        items = sorted(((k, q, b, K) for k, bs in branch_sets for q, b, K in bs), key=lambda x: len(x[2]))
+        try:
+            for m in marked:
+                m.sieve_prefix = cap["kv"][m]
+            i = 0
+            while i < len(items):                       # rows of similar length together (less padding)
+                j = i + 1
+                while j < len(items):
+                    L, n = len(items[j][2]), j - i + 1
+                    if n * (ns + L) > self.KEY_TOKENS or n * L > self.BRANCH_TOKENS:
+                        break
+                    j += 1
+                rows, L = items[i:j], len(items[j - 1][2])
+                B = len(rows)
+                ids = torch.full((B, L), self.pad_id, dtype=torch.long)
+                seg = torch.full((B, L), -1, dtype=torch.long)
+                for r, (_, _, b, _) in enumerate(rows):
+                    ids[r, :len(b)] = torch.tensor(b); seg[r, :len(b)] = 1
+                ids, seg = ids.to(dev), seg.to(dev)
+                qp = torch.arange(ns, ns + L, device=dev)[None].expand(B, L)
+                masks = self._masks(seg, qp, k_seg=torch.cat([torch.zeros(B, ns, dtype=torch.long, device=dev), seg], 1),
+                                    k_pos=torch.cat([pos.expand(B, ns), qp], 1))
+                cache = DynamicCache(config=cfg)        # the linear-attention states after block 0, one per row
+                for li, (conv, rec) in states.items():
+                    layer = cache.layers[li]
+                    conv_b, rec_b = conv.expand(B, *conv.shape[1:]), rec.expand(B, *rec.shape[1:])
+                    layer.lazy_initialization(conv_states=conv_b, recurrent_states=rec_b, conv_kernel_size=conv.shape[-1])
+                    layer.conv_states[0].copy_(conv_b); layer.recurrent_states[0].copy_(rec_b)
+                    layer.has_previous_state[0] = True
+                h = self.lm(input_ids=ids, position_ids=qp, attention_mask=masks, past_key_values=cache,
+                            use_cache=True).last_hidden_state
+                for r, (k, q, b, K) in enumerate(rows):
+                    out[k][q] = self.label_logits(h[r, len(b) - 1], K).cpu()
+                del cache, h
+                i = j
+        finally:
+            for m in marked:
+                m.sieve_prefix = None
+        return out
 
     @torch.no_grad()
     def state_once(self, block0, branch_sets):
@@ -269,6 +356,8 @@ class LetterModel:
         {key: {question: logits}}. The block 0 pass keeps each marked layer's keys and values (sdpa_sieve); a sliding
         layer keeps only the last window - 1, all a branch can see. The branches then run concatenated, each with its
         own segment and positions restarting after block 0, reading those keys first, as in a pack."""
+        if self.recurrent:
+            return self.state_once_rows(block0, branch_sets)
         dev, ns = self.device, len(block0)
         ks = min(ns, self.window - 1)
         marked = [m for m in self.lm.modules() if getattr(m, "sieve_attention", False)]

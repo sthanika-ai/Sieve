@@ -65,6 +65,7 @@ decide(m,
 | Sieve-31B | [Gemma-4-31B-it](https://huggingface.co/google/gemma-4-31B-it) | answer slots | 64.25 ‡ | [62.52](https://huggingface.co/datasets/sthanika-ai/Sieve-31B-decision-index-results) | 83 GB | [`sthanika-ai/Sieve-31B`](https://huggingface.co/sthanika-ai/Sieve-31B) |
 | Sieve-27B-v2 | [Qwen3.8-27B](https://huggingface.co/Qwen/Qwen3.8-27B) | pointer head | **59.89** | [68.02](https://huggingface.co/datasets/sthanika-ai/Sieve-27B-v2-decision-index-results) | 52 GB | [`sthanika-ai/Sieve-27B-v2`](https://huggingface.co/sthanika-ai/Sieve-27B-v2) |
 | Sieve-27B | [Qwen3.8-27B](https://huggingface.co/Qwen/Qwen3.8-27B) | pointer head | 60.17 ‡ | [60.04](https://huggingface.co/datasets/sthanika-ai/Sieve-27B-decision-index-results) | 55 GB | [`sthanika-ai/Sieve-27B`](https://huggingface.co/sthanika-ai/Sieve-27B) |
+| Sieve-9B-v3 | [Qwen3.5-9B](https://huggingface.co/Qwen/Qwen3.5-9B) | letter readout | – | [67.60](https://huggingface.co/datasets/sthanika-ai/Sieve-9B-v3-decision-index-results) † | 17 GiB | [`sthanika-ai/Sieve-9B-v3`](https://huggingface.co/sthanika-ai/Sieve-9B-v3) |
 | Sieve-9B-v2 | [Qwen3.5-9B](https://huggingface.co/Qwen/Qwen3.5-9B) | pointer head | **47.00** | [53.35](https://huggingface.co/datasets/sthanika-ai/Sieve-9B-v2-decision-index-results) | 20 GB | [`sthanika-ai/Sieve-9B-v2`](https://huggingface.co/sthanika-ai/Sieve-9B-v2) |
 | Sieve-9B | [Qwen3.5-9B](https://huggingface.co/Qwen/Qwen3.5-9B) | pointer head | **41.73** | [41.88](https://huggingface.co/datasets/sthanika-ai/Sieve-9B-decision-index-results) | 20 GB | [`sthanika-ai/Sieve-9B`](https://huggingface.co/sthanika-ai/Sieve-9B) |
 | Sieve-4B | [Qwen3.5-4B](https://huggingface.co/Qwen/Qwen3.5-4B) | option codes | **40.96** | [50.06](https://huggingface.co/datasets/sthanika-ai/Sieve-4B-decision-index-results) | 10 GB | [`sthanika-ai/Sieve-4B`](https://huggingface.co/sthanika-ai/Sieve-4B) |
@@ -75,7 +76,9 @@ decide(m,
 
 Scores are from the [Decision Index leaderboard](https://huggingface.co/spaces/multimodalart/jev-decision-index), edition 0.4.1 (2026-10-28); each Public score links to the full results. † Our own run of the public suite; not on the leaderboard yet. ‡ Replaced on the leaderboard by its successor; last score shown (Sieve-31B: 0.4.1 of 2026-10-26; Sieve-27B and Sieve-2B-v2: 0.3.2 of 2026-10-14).
 
-Sieve-31B-v3 runs shorter requests on an 80 GB GPU and every public Decision Index request on a 96 GB GPU (the serving benchmark's peak was 81.4 GiB allocated, over 352 public requests including the largest by the kit's size estimate). Sieve-31B-v2 and Sieve-31B need a 96 GB GPU, or two GPUs with `split`.
+Sieve-31B-v3 runs shorter requests on an 80 GB GPU and every public Decision Index request on a 96 GB GPU (the serving benchmark's peak was 81.4 GiB allocated, over 352 public requests including the largest by the kit's size estimate). Sieve-31B-v2 and Sieve-31B need a 96 GB GPU, or two GPUs with `split`. Sieve-9B-v3 ran every public Decision Index request on one 40 GB A100.
+
+**Sieve-9B-v3** is the letter readout of Sieve-31B-v3 on a Qwen3.5 backbone (`sieve` 0.5.1 or later): a full fine-tune of Qwen3.5-9B, read at an `Answer:` slot in Qwen's chat template, with bidirectional attention in its full-attention layers and causal Gated DeltaNet layers. `load_sieve` reads the backbone from the model's files, so the calls below are the same.
 
 **Sieve-Vision.** [Sieve-Vision-27B](https://huggingface.co/sthanika-ai/Sieve-Vision-27B) (Full score 65.19, CC BY-NC 4.0) and [Sieve-Vision-4B](https://huggingface.co/sthanika-ai/Sieve-Vision-4B) (58.60) answer multiple-choice questions about images, on the Decision Index vision leaderboard (edition 0.4, 2026-10-28). Their code is in their own model repositories.
 
@@ -111,7 +114,7 @@ answers = decide(m, state, questions)
 | `device` | `"cuda"` (default), or a GPU such as `"cuda:1"`. |
 | `temperature` | Overrides the calibrated temperatures; `1.0` gives raw probabilities. At least 0.001. Pointer-head models also take it per call in `decide`. |
 | `split` | Sieve-31B-v2 and Sieve-31B on two GPUs, e.g. `split='{"0": "40GiB", "1": "40GiB"}'`. |
-| `max_tokens` | Sieve-31B-v3: refuse prompts longer than this. There is no limit by default. |
+| `max_tokens` | Letter-readout models (Sieve-31B-v3, Sieve-9B-v3): refuse prompts longer than this. There is no limit by default. |
 
 `state` is text, a JSON object or a list. A request a model cannot answer raises `ValueError`; nothing is ever truncated.
 
@@ -126,7 +129,7 @@ answers = decide(m, state, questions)
 - Every question needs non-empty `instructions`; a bare number is read as its text.
 - `confidence` runs from 0 (no preference) to 1 (certain). All numbers are rounded to 4 decimals.
 - The option-fork models (Sieve-2B-v2, Sieve-2B, Sieve-0.8B) do not answer `score`, and refuse two options with the same text.
-- Sieve-31B-v3, Sieve-27B-v2 and Sieve-2B-v3 answer `score`, but were trained on `choice` and `noul` questions only.
+- Sieve-31B-v3, Sieve-9B-v3, Sieve-27B-v2 and Sieve-2B-v3 answer `score`, but were trained on `choice` and `noul` questions only.
 
 ### Token limits
 
@@ -138,6 +141,7 @@ answers = decide(m, state, questions)
 | Sieve-4B | 32,768 tokens for the state and the longest question; 65,536 per request |
 | Sieve-31B-v2, Sieve-31B | 32,768 tokens per question's prompt |
 | Sieve-31B-v3 | No limit by default (set one with `max_tokens`). Trained on prompts of up to 16,384 tokens; public Decision Index prompts of over 69,000 tokens ran on one 96 GB GPU. |
+| Sieve-9B-v3 | No limit by default (set one with `max_tokens`). Trained on prompts of up to 16,384 tokens; every public Decision Index request, up to about 54,000 tokens, ran on one 40 GB A100. |
 
 A request over a limit is refused, never truncated.
 
@@ -176,7 +180,7 @@ python -m decision_index run --engine sieve.decision_index_engine:SieveEngine --
 | Pointer head | Sieve-27B-v2, Sieve-27B, Sieve-9B-v2, Sieve-9B, Sieve-2B-v3 | A pointer head scores the end of each option against the decision point; each question runs from the state's cache. |
 | Option fork | Sieve-2B-v2, Sieve-2B, Sieve-0.8B | Each option is scored as its own continuation of the encoded state and question, so option order cannot matter. |
 | Option codes | Sieve-4B | The options are listed under codes and a 255-way head reads the decision point. |
-| Letter readout | Sieve-31B-v3 | The model's own output logits for the option letters, read at an answer slot per question. |
+| Letter readout | Sieve-31B-v3, Sieve-9B-v3 | The model's own output logits for the option letters, read at an answer slot per question, on Gemma 4 or Qwen3.5 backbones; a long state shared by several questions is computed once. |
 | Answer slots | Sieve-31B-v2, Sieve-31B | Each question in the chat template, scored at an answer slot by the output rows of the option labels. |
 
 Only the text part of each backbone runs, so no model can produce text. Every design, its attention rules and its calibration are described in [`docs/architecture.md`](docs/architecture.md).

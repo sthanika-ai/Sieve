@@ -10,7 +10,7 @@ Sieve models come in five designs, told apart by their files:
     slots    adapter_config.json on Gemma-4-31B-it, no head
                                         Sieve-31B-v2, Sieve-31B             (sieve.slots)
     letters  a full model (config.json + safetensors) and head.pt with readout "letters", no adapter
-                                        Sieve-31B-v3                        (sieve.letters)
+                                        Sieve-31B-v3, Sieve-9B-v3           (sieve.letters)
 
 load_sieve and decide work with all of them.
 """
